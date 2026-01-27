@@ -43,7 +43,7 @@ import { DEFAULT_TEMPLATE_OUTPUT, CONTROLM_FIELDS, AIRFLOW_FIELDS } from "@/type
 
 const MonacoEditor = dynamic(
   () => import("@monaco-editor/react").then((mod) => mod.default),
-  { ssr: false, loading: () => <div className="h-[300px] bg-muted animate-pulse" /> }
+  { ssr: false, loading: () => <div className="h-[400px] bg-muted animate-pulse" /> }
 );
 
 // Mock templates for demo
@@ -154,7 +154,7 @@ export default function TemplatesPage() {
               New Template
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-5xl max-h-[95vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingTemplate ? "Edit Template" : "Create New Template"}
@@ -448,19 +448,27 @@ function TemplateEditor({
 
       {/* Output Template */}
       <div className="space-y-3">
-        <Label>Output Template (Handlebars)</Label>
+        <div className="flex items-center justify-between">
+          <Label>Output Template (Handlebars)</Label>
+          <span className="text-xs text-muted-foreground">
+            Python / Jinja2 syntax
+          </span>
+        </div>
         <div className="border rounded-lg overflow-hidden">
           <MonacoEditor
-            height="200px"
+            height="400px"
             language="python"
             value={outputTemplate}
             onChange={(value) => setOutputTemplate(value || "")}
             options={{
               minimap: { enabled: false },
-              fontSize: 13,
+              fontSize: 14,
               lineNumbers: "on",
               scrollBeyondLastLine: false,
               wordWrap: "on",
+              tabSize: 4,
+              insertSpaces: true,
+              automaticLayout: true,
             }}
             theme="vs-dark"
           />
