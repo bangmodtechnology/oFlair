@@ -432,3 +432,4 @@ npm install -D @types/node
   - BlobOperator
 - [ ] เพิ่มส่วนของการ Preview Dag หลัง Convert เสร็จเพื่อจะได้ ไม่ต้อง save dag ออกมาอ่าน
 - [ ] เพิ่มเมนูส่วนของการดูว่า Convert job ไหนไปแล้วบ้าง แล้ว Convert เป็น Dag อะไร
+- [ ] ลบ snake_case ออกทั้งหมด 
