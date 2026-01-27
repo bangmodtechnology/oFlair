@@ -39,8 +39,9 @@ export default function SettingsPage() {
     taskIdCase: "snake_case",
 
     // Output format
-    pythonVersion: "3.8",
-    airflowVersion: "2.5",
+    pythonVersion: "3.9",
+    airflowVersion: "3.1",
+    useTaskFlowApi: false,
     includeComments: true,
     includeDocstrings: true,
 
@@ -63,8 +64,9 @@ export default function SettingsPage() {
       dagIdPrefix: "",
       dagIdSuffix: "_dag",
       taskIdCase: "snake_case",
-      pythonVersion: "3.8",
-      airflowVersion: "2.5",
+      pythonVersion: "3.9",
+      airflowVersion: "3.1",
+      useTaskFlowApi: false,
       includeComments: true,
       includeDocstrings: true,
       databaseUrl: "file:./dev.db",
@@ -312,12 +314,31 @@ export default function SettingsPage() {
                     <SelectItem value="2.7">Airflow 2.7.x</SelectItem>
                     <SelectItem value="2.8">Airflow 2.8.x</SelectItem>
                     <SelectItem value="2.9">Airflow 2.9.x</SelectItem>
+                    <SelectItem value="2.10">Airflow 2.10.x</SelectItem>
+                    <SelectItem value="3.0">Airflow 3.0.x</SelectItem>
+                    <SelectItem value="3.1">Airflow 3.1.x (Latest)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
+            <Separator />
+
             <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="taskflow"
+                  checked={settings.useTaskFlowApi}
+                  onChange={(e) =>
+                    setSettings({ ...settings, useTaskFlowApi: e.target.checked })
+                  }
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <Label htmlFor="taskflow" className="font-normal">
+                  Use TaskFlow API (@dag decorator) - Airflow 3.x style
+                </Label>
+              </div>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -347,6 +368,18 @@ export default function SettingsPage() {
                 </Label>
               </div>
             </div>
+
+            {settings.airflowVersion.startsWith("3") && (
+              <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  <strong>Airflow 3.x Note:</strong> Operators are imported from
+                  <code className="mx-1 px-1 bg-blue-100 dark:bg-blue-900 rounded">
+                    airflow.providers.standard
+                  </code>
+                  and uses the new SDK imports.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

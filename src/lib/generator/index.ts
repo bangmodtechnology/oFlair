@@ -5,12 +5,28 @@ import {
   convertJobToTask,
   buildDependencies,
   groupJobsByFolder,
+  type AirflowVersion,
+  type GeneratorOptions,
 } from "./dag-generator";
+
+export interface GenerateDagsOptions {
+  templateId?: string;
+  airflowVersion?: AirflowVersion;
+  useTaskFlowApi?: boolean;
+}
 
 export async function generateDags(
   jobs: ControlMJob[],
-  templateId: string = "default"
+  templateIdOrOptions: string | GenerateDagsOptions = "default"
 ): Promise<GeneratedDAG[]> {
+  // Handle backwards compatibility
+  const options: GenerateDagsOptions =
+    typeof templateIdOrOptions === "string"
+      ? { templateId: templateIdOrOptions }
+      : templateIdOrOptions;
+
+  const { airflowVersion = "2.9", useTaskFlowApi = false } = options;
+
   const generatedDags: GeneratedDAG[] = [];
 
   // Group jobs by folder to create separate DAGs
@@ -40,8 +56,11 @@ export async function generateDags(
       dependencies,
     };
 
-    // Generate code
-    const content = generateDagCode(dag);
+    // Generate code with version-specific template
+    const content = generateDagCode(dag, {
+      airflowVersion,
+      useTaskFlowApi,
+    });
 
     generatedDags.push({
       filename: `${toSnakeCase(folderName)}_dag.py`,
@@ -63,3 +82,4 @@ function toSnakeCase(str: string): string {
 }
 
 export { generateDagCode, convertJobToTask, buildDependencies } from "./dag-generator";
+export type { AirflowVersion, GeneratorOptions } from "./dag-generator";

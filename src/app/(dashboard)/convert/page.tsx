@@ -7,6 +7,7 @@ import { JobPreview } from "@/components/converter/job-preview";
 import { OutputViewer } from "@/components/converter/output-viewer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -15,9 +16,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, Loader2, RefreshCw, Settings2 } from "lucide-react";
+import { ArrowRight, Loader2, RefreshCw, Settings2, Info } from "lucide-react";
 import { parseControlM } from "@/lib/parser";
-import { generateDags } from "@/lib/generator";
+import { generateDags, type AirflowVersion } from "@/lib/generator";
 import { toast } from "sonner";
 
 export default function ConvertPage() {
@@ -38,6 +39,8 @@ export default function ConvertPage() {
   } = useConverterStore();
 
   const [selectedTemplate, setSelectedTemplate] = useState("default");
+  const [airflowVersion, setAirflowVersion] = useState<AirflowVersion>("3.1");
+  const [useTaskFlowApi, setUseTaskFlowApi] = useState(false);
 
   const handleParse = async () => {
     if (!inputContent || !inputType) return;
@@ -70,10 +73,14 @@ export default function ConvertPage() {
         selectedJobs.includes(job.JOBNAME)
       );
 
-      const dags = await generateDags(jobsToConvert, selectedTemplate);
+      const dags = await generateDags(jobsToConvert, {
+        templateId: selectedTemplate,
+        airflowVersion,
+        useTaskFlowApi,
+      });
       setGeneratedDags(dags);
       setStep("result");
-      toast.success(`Generated ${dags.length} DAG(s) successfully`);
+      toast.success(`Generated ${dags.length} DAG(s) for Airflow ${airflowVersion}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate DAGs";
       setError(message);
@@ -82,6 +89,8 @@ export default function ConvertPage() {
       setIsProcessing(false);
     }
   };
+
+  const isAirflow3 = airflowVersion.startsWith("3");
 
   return (
     <div className="space-y-6">
@@ -178,35 +187,95 @@ export default function ConvertPage() {
 
         {/* Right Panel */}
         <div className="space-y-6">
-          {/* Template Selection */}
+          {/* Template & Version Selection */}
           {(step === "convert" || step === "result") && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Settings2 className="h-5 w-5" />
-                  2. Select Template
+                  2. Configure Output
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Select
-                  value={selectedTemplate}
-                  onValueChange={setSelectedTemplate}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a template" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="default">
-                      Default Template
-                    </SelectItem>
-                    <SelectItem value="bash">
-                      Bash Operator Only
-                    </SelectItem>
-                    <SelectItem value="python">
-                      Python Operator
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                {/* Airflow Version */}
+                <div className="space-y-2">
+                  <Label>Airflow Version</Label>
+                  <Select
+                    value={airflowVersion}
+                    onValueChange={(v) => setAirflowVersion(v as AirflowVersion)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="2.5">Airflow 2.5.x</SelectItem>
+                      <SelectItem value="2.6">Airflow 2.6.x</SelectItem>
+                      <SelectItem value="2.7">Airflow 2.7.x</SelectItem>
+                      <SelectItem value="2.8">Airflow 2.8.x</SelectItem>
+                      <SelectItem value="2.9">Airflow 2.9.x</SelectItem>
+                      <SelectItem value="2.10">Airflow 2.10.x</SelectItem>
+                      <SelectItem value="3.0">Airflow 3.0.x</SelectItem>
+                      <SelectItem value="3.1">Airflow 3.1.x (Latest)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Template Selection */}
+                <div className="space-y-2">
+                  <Label>Template</Label>
+                  <Select
+                    value={selectedTemplate}
+                    onValueChange={setSelectedTemplate}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">
+                        Default Template
+                      </SelectItem>
+                      <SelectItem value="bash">
+                        Bash Operator Only
+                      </SelectItem>
+                      <SelectItem value="python">
+                        Python Operator
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* TaskFlow API Option (Airflow 3.x only) */}
+                {isAirflow3 && (
+                  <div className="flex items-center gap-2 pt-2">
+                    <input
+                      type="checkbox"
+                      id="taskflow"
+                      checked={useTaskFlowApi}
+                      onChange={(e) => setUseTaskFlowApi(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <Label htmlFor="taskflow" className="font-normal cursor-pointer">
+                      Use TaskFlow API (@dag decorator)
+                    </Label>
+                  </div>
+                )}
+
+                {/* Airflow 3.x Info */}
+                {isAirflow3 && (
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
+                    <Info className="h-4 w-4 mt-0.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <p className="text-xs text-blue-800 dark:text-blue-200">
+                      Airflow 3.x uses new import paths from{" "}
+                      <code className="px-1 bg-blue-100 dark:bg-blue-900 rounded">
+                        airflow.providers.standard
+                      </code>{" "}
+                      and{" "}
+                      <code className="px-1 bg-blue-100 dark:bg-blue-900 rounded">
+                        airflow.sdk
+                      </code>
+                    </p>
+                  </div>
+                )}
 
                 <Button
                   className="w-full"
@@ -225,6 +294,15 @@ export default function ConvertPage() {
                     </>
                   )}
                 </Button>
+
+                <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <Badge variant="outline">
+                    Airflow {airflowVersion}
+                  </Badge>
+                  {isAirflow3 && useTaskFlowApi && (
+                    <Badge variant="secondary">TaskFlow API</Badge>
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}
