@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Control-M Sample: Daily Batch Processing Jobs -->
+<DEFTABLE xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <FOLDER FOLDER_NAME="DAILY_BATCH" DATACENTER="Production">
+    <JOB JOBNAME="EXTRACT_SALES_DATA"
+         APPLICATION="Sales"
+         SUB_APPLICATION="ETL"
+         JOB_TYPE="Command"
+         DESCRIPTION="Extract daily sales data from source database"
+         CMDLINE="/opt/scripts/extract_sales.sh --date %%ODATE"
+         RUN_AS="etl_user"
+         HOST="etl-server-01"
+         TIMEFROM="0100"
+         TIMEUNTIL="0600"
+         MAXRERUN="3"
+         PRIORITY="50">
+      <OUTCOND NAME="SALES_DATA_READY" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <JOB JOBNAME="TRANSFORM_SALES_DATA"
+         APPLICATION="Sales"
+         SUB_APPLICATION="ETL"
+         JOB_TYPE="Command"
+         DESCRIPTION="Transform and clean sales data"
+         CMDLINE="python3 /opt/scripts/transform_sales.py"
+         RUN_AS="etl_user"
+         HOST="etl-server-01"
+         MAXRERUN="2"
+         PRIORITY="50">
+      <INCOND NAME="SALES_DATA_READY" ODATE="ODAT" AND_OR="AND"/>
+      <OUTCOND NAME="SALES_TRANSFORMED" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <JOB JOBNAME="LOAD_TO_WAREHOUSE"
+         APPLICATION="Sales"
+         SUB_APPLICATION="ETL"
+         JOB_TYPE="Command"
+         DESCRIPTION="Load transformed data to data warehouse"
+         CMDLINE="/opt/scripts/load_warehouse.sh"
+         RUN_AS="dw_user"
+         HOST="dw-server-01"
+         MAXRERUN="1"
+         PRIORITY="60"
+         CRITICAL="Y">
+      <INCOND NAME="SALES_TRANSFORMED" ODATE="ODAT" AND_OR="AND"/>
+      <OUTCOND NAME="DW_LOAD_COMPLETE" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <JOB JOBNAME="GENERATE_DAILY_REPORT"
+         APPLICATION="Sales"
+         SUB_APPLICATION="Reporting"
+         JOB_TYPE="Command"
+         DESCRIPTION="Generate daily sales report"
+         CMDLINE="python3 /opt/reports/daily_sales_report.py --output /reports/"
+         RUN_AS="report_user"
+         HOST="report-server-01"
+         MAXRERUN="2">
+      <INCOND NAME="DW_LOAD_COMPLETE" ODATE="ODAT" AND_OR="AND"/>
+      <OUTCOND NAME="DAILY_REPORT_DONE" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <JOB JOBNAME="SEND_REPORT_EMAIL"
+         APPLICATION="Sales"
+         SUB_APPLICATION="Notification"
+         JOB_TYPE="Command"
+         DESCRIPTION="Send daily report via email to stakeholders"
+         CMDLINE="/opt/scripts/send_email.sh --template daily_sales --to sales-team@company.com"
+         RUN_AS="notify_user"
+         HOST="mail-server-01">
+      <INCOND NAME="DAILY_REPORT_DONE" ODATE="ODAT" AND_OR="AND"/>
+    </JOB>
+
+    <JOB JOBNAME="CLEANUP_TEMP_FILES"
+         APPLICATION="Sales"
+         SUB_APPLICATION="Maintenance"
+         JOB_TYPE="Command"
+         DESCRIPTION="Clean up temporary files older than 7 days"
+         CMDLINE="find /tmp/etl -mtime +7 -delete"
+         RUN_AS="etl_user"
+         HOST="etl-server-01"
+         TIMEFROM="2300">
+      <INCOND NAME="DAILY_REPORT_DONE" ODATE="ODAT" AND_OR="AND"/>
+    </JOB>
+  </FOLDER>
+</DEFTABLE>

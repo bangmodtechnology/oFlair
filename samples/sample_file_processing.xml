@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Control-M Sample: File Processing with File Watcher -->
+<DEFTABLE xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <FOLDER FOLDER_NAME="FILE_PROCESSING" DATACENTER="Production">
+
+    <!-- File Watcher Jobs -->
+    <JOB JOBNAME="WATCH_INVOICE_FILES"
+         APPLICATION="Finance"
+         SUB_APPLICATION="FileWatch"
+         JOB_TYPE="FileWatcher"
+         DESCRIPTION="Watch for incoming invoice files"
+         FILENAME="/data/incoming/invoices/*.csv"
+         RUN_AS="file_watcher"
+         HOST="file-server-01"
+         TIMEFROM="0600"
+         TIMEUNTIL="2200">
+      <OUTCOND NAME="INVOICE_FILE_ARRIVED" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <JOB JOBNAME="WATCH_PAYMENT_FILES"
+         APPLICATION="Finance"
+         SUB_APPLICATION="FileWatch"
+         JOB_TYPE="FileWatcher"
+         DESCRIPTION="Watch for payment reconciliation files"
+         FILENAME="/data/incoming/payments/payment_*.xml"
+         RUN_AS="file_watcher"
+         HOST="file-server-01">
+      <OUTCOND NAME="PAYMENT_FILE_ARRIVED" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <!-- Processing Jobs -->
+    <JOB JOBNAME="VALIDATE_INVOICE"
+         APPLICATION="Finance"
+         SUB_APPLICATION="Validation"
+         JOB_TYPE="Command"
+         DESCRIPTION="Validate invoice file format and data"
+         CMDLINE="python3 /opt/finance/validate_invoice.py --input /data/incoming/invoices/"
+         RUN_AS="finance_user"
+         HOST="app-server-01"
+         MAXRERUN="2">
+      <INCOND NAME="INVOICE_FILE_ARRIVED" ODATE="ODAT" AND_OR="AND"/>
+      <OUTCOND NAME="INVOICE_VALIDATED" ODATE="ODAT" SIGN="+"/>
+      <VARIABLE NAME="INPUT_DIR" VALUE="/data/incoming/invoices/"/>
+    </JOB>
+
+    <JOB JOBNAME="PROCESS_INVOICE"
+         APPLICATION="Finance"
+         SUB_APPLICATION="Processing"
+         JOB_TYPE="Script"
+         DESCRIPTION="Process validated invoices"
+         FILENAME="/opt/finance/process_invoice.py"
+         RUN_AS="finance_user"
+         HOST="app-server-01"
+         CRITICAL="Y">
+      <INCOND NAME="INVOICE_VALIDATED" ODATE="ODAT" AND_OR="AND"/>
+      <OUTCOND NAME="INVOICE_PROCESSED" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <JOB JOBNAME="PROCESS_PAYMENT"
+         APPLICATION="Finance"
+         SUB_APPLICATION="Processing"
+         JOB_TYPE="Command"
+         DESCRIPTION="Process payment reconciliation"
+         CMDLINE="/opt/finance/process_payment.sh"
+         RUN_AS="finance_user"
+         HOST="app-server-01">
+      <INCOND NAME="PAYMENT_FILE_ARRIVED" ODATE="ODAT" AND_OR="AND"/>
+      <OUTCOND NAME="PAYMENT_PROCESSED" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <JOB JOBNAME="UPDATE_LEDGER"
+         APPLICATION="Finance"
+         SUB_APPLICATION="Database"
+         JOB_TYPE="Database"
+         DESCRIPTION="Update general ledger with processed transactions"
+         CMDLINE="sqlplus finance_app@FINDB @/opt/sql/update_ledger.sql"
+         RUN_AS="dba_user"
+         HOST="db-server-01"
+         PRIORITY="70">
+      <INCOND NAME="INVOICE_PROCESSED" ODATE="ODAT" AND_OR="AND"/>
+      <INCOND NAME="PAYMENT_PROCESSED" ODATE="ODAT" AND_OR="AND"/>
+      <OUTCOND NAME="LEDGER_UPDATED" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <JOB JOBNAME="ARCHIVE_FILES"
+         APPLICATION="Finance"
+         SUB_APPLICATION="Archival"
+         JOB_TYPE="Command"
+         DESCRIPTION="Archive processed files to storage"
+         CMDLINE="/opt/scripts/archive_files.sh --source /data/incoming --dest /archive/finance"
+         RUN_AS="archive_user"
+         HOST="file-server-01">
+      <INCOND NAME="LEDGER_UPDATED" ODATE="ODAT" AND_OR="AND"/>
+    </JOB>
+
+  </FOLDER>
+</DEFTABLE>

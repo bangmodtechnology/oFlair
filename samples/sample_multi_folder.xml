@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Control-M Sample: Multiple Folders with Cross-Dependencies -->
+<DEFTABLE xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+  <!-- Data Ingestion Folder -->
+  <FOLDER FOLDER_NAME="DATA_INGESTION" DATACENTER="DataCenter1">
+    <JOB JOBNAME="INGEST_API_DATA"
+         APPLICATION="DataPlatform"
+         SUB_APPLICATION="Ingestion"
+         JOB_TYPE="Command"
+         DESCRIPTION="Ingest data from external APIs"
+         CMDLINE="python3 /opt/ingestion/api_ingestion.py --config /etc/ingestion/api.yaml"
+         RUN_AS="data_user"
+         HOST="ingestion-01"
+         TIMEFROM="0000"
+         MAXRERUN="3">
+      <OUTCOND NAME="API_DATA_READY" ODATE="ODAT" SIGN="+"/>
+      <VARIABLE NAME="API_ENDPOINT" VALUE="https://api.example.com/v1"/>
+      <VARIABLE NAME="BATCH_SIZE" VALUE="10000"/>
+    </JOB>
+
+    <JOB JOBNAME="INGEST_DB_SNAPSHOT"
+         APPLICATION="DataPlatform"
+         SUB_APPLICATION="Ingestion"
+         JOB_TYPE="Command"
+         DESCRIPTION="Take database snapshot for data lake"
+         CMDLINE="/opt/ingestion/db_snapshot.sh --tables customers,orders,products"
+         RUN_AS="dba_user"
+         HOST="db-server-01"
+         TIMEFROM="0200">
+      <OUTCOND NAME="DB_SNAPSHOT_READY" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <JOB JOBNAME="INGEST_LOG_FILES"
+         APPLICATION="DataPlatform"
+         SUB_APPLICATION="Ingestion"
+         JOB_TYPE="FileWatcher"
+         DESCRIPTION="Watch and ingest application logs"
+         FILENAME="/var/log/app/*.log"
+         RUN_AS="log_user"
+         HOST="log-collector-01">
+      <OUTCOND NAME="LOGS_COLLECTED" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+  </FOLDER>
+
+  <!-- Data Processing Folder -->
+  <FOLDER FOLDER_NAME="DATA_PROCESSING" DATACENTER="DataCenter1">
+    <JOB JOBNAME="MERGE_DATA_SOURCES"
+         APPLICATION="DataPlatform"
+         SUB_APPLICATION="Processing"
+         JOB_TYPE="Command"
+         DESCRIPTION="Merge data from all ingestion sources"
+         CMDLINE="spark-submit /opt/spark/merge_sources.py"
+         RUN_AS="spark_user"
+         HOST="spark-master"
+         CRITICAL="Y">
+      <INCOND NAME="API_DATA_READY" ODATE="ODAT" AND_OR="AND"/>
+      <INCOND NAME="DB_SNAPSHOT_READY" ODATE="ODAT" AND_OR="AND"/>
+      <OUTCOND NAME="DATA_MERGED" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <JOB JOBNAME="DATA_QUALITY_CHECK"
+         APPLICATION="DataPlatform"
+         SUB_APPLICATION="Quality"
+         JOB_TYPE="Script"
+         DESCRIPTION="Run data quality validation rules"
+         FILENAME="/opt/quality/run_dq_checks.py"
+         RUN_AS="dq_user"
+         HOST="quality-server-01">
+      <INCOND NAME="DATA_MERGED" ODATE="ODAT" AND_OR="AND"/>
+      <OUTCOND NAME="DQ_PASSED" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <JOB JOBNAME="BUILD_AGGREGATIONS"
+         APPLICATION="DataPlatform"
+         SUB_APPLICATION="Aggregation"
+         JOB_TYPE="Command"
+         DESCRIPTION="Build daily aggregation tables"
+         CMDLINE="spark-submit /opt/spark/build_aggregations.py --date %%ODATE"
+         RUN_AS="spark_user"
+         HOST="spark-master"
+         PRIORITY="80">
+      <INCOND NAME="DQ_PASSED" ODATE="ODAT" AND_OR="AND"/>
+      <OUTCOND NAME="AGGREGATIONS_READY" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+  </FOLDER>
+
+  <!-- Reporting Folder -->
+  <FOLDER FOLDER_NAME="REPORTING" DATACENTER="DataCenter2">
+    <JOB JOBNAME="REFRESH_DASHBOARDS"
+         APPLICATION="BI"
+         SUB_APPLICATION="Dashboards"
+         JOB_TYPE="Command"
+         DESCRIPTION="Refresh all BI dashboards"
+         CMDLINE="/opt/bi/refresh_dashboards.sh --all"
+         RUN_AS="bi_user"
+         HOST="bi-server-01">
+      <INCOND NAME="AGGREGATIONS_READY" ODATE="ODAT" AND_OR="AND"/>
+      <OUTCOND NAME="DASHBOARDS_REFRESHED" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <JOB JOBNAME="GENERATE_EXEC_REPORT"
+         APPLICATION="BI"
+         SUB_APPLICATION="Reports"
+         JOB_TYPE="Command"
+         DESCRIPTION="Generate executive summary report"
+         CMDLINE="python3 /opt/reports/exec_summary.py --format pdf --email executives@company.com"
+         RUN_AS="report_user"
+         HOST="report-server-01">
+      <INCOND NAME="DASHBOARDS_REFRESHED" ODATE="ODAT" AND_OR="AND"/>
+      <OUTCOND NAME="EXEC_REPORT_SENT" ODATE="ODAT" SIGN="+"/>
+    </JOB>
+
+    <JOB JOBNAME="EXPORT_TO_PARTNERS"
+         APPLICATION="BI"
+         SUB_APPLICATION="Export"
+         JOB_TYPE="Command"
+         DESCRIPTION="Export data feeds to partner systems"
+         CMDLINE="/opt/export/partner_feed.sh --partners all"
+         RUN_AS="export_user"
+         HOST="sftp-server-01"
+         TIMEFROM="0800">
+      <INCOND NAME="AGGREGATIONS_READY" ODATE="ODAT" AND_OR="AND"/>
+    </JOB>
+
+    <JOB JOBNAME="LOG_ANALYTICS_REPORT"
+         APPLICATION="BI"
+         SUB_APPLICATION="Analytics"
+         JOB_TYPE="Command"
+         DESCRIPTION="Generate log analytics insights"
+         CMDLINE="python3 /opt/analytics/log_insights.py"
+         RUN_AS="analytics_user"
+         HOST="analytics-server-01">
+      <INCOND NAME="LOGS_COLLECTED" ODATE="ODAT" AND_OR="AND"/>
+    </JOB>
+  </FOLDER>
+
+</DEFTABLE>
