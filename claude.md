@@ -421,3 +421,14 @@ npm install -D @types/node
 - เริ่มจาก Web-based ก่อน ถ้าต้องการ Desktop สามารถ wrap ด้วย Tauri ภายหลังได้
 - ให้ความสำคัญกับ UX - ผู้ใช้ไม่ควรต้องเรียนรู้มากก่อนใช้งานได้
 - Template system ควร flexible พอที่จะรองรับ job types ต่างๆ ของ Control-M
+
+# แก้ไข และ เพิ่มเติมฟังก์ชั่น
+- [ ] ตอนนี้ไม่สามารถเชื่อมต่อ Database ได้ ทำให้ Save Config สำหรับการตั้งค่าต่างๆ
+- [ ] แยก template ออกมาจาก database แล้วเก็บเป็นไฟล์ yaml แทน
+- [ ] ตรวจสอบและจัดทำ mapping condition ใหม่ทั้งหมด แล้วทำให่รองรับ tag <VARIABLE> ที่อยู่ภายใต้ <JOB> ให้สามารถ convert ได้ด้วย
+- [ ] สร้างตัวอย่าง template ใหม่ให้ครบตาม Operator พื้นฐาน
+- [ ] เพิ่ม Operator ดังนี้
+  - kubePodOperator
+  - BlobOperator
+- [ ] เพิ่มส่วนของการ Preview Dag หลัง Convert เสร็จเพื่อจะได้ ไม่ต้อง save dag ออกมาอ่าน
+- [ ] เพิ่มเมนูส่วนของการดูว่า Convert job ไหนไปแล้วบ้าง แล้ว Convert เป็น Dag อะไร
