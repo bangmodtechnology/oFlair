@@ -1,0 +1,22 @@
+{{!-- Handlebars template for BashOperator --}}
+{{task_id}} = BashOperator(
+    task_id='{{task_id}}',
+    bash_command='''{{bash_command}}''',
+{{#if env}}
+    env={
+{{#each env}}
+        '{{@key}}': '{{this}}',
+{{/each}}
+    },
+{{/if}}
+{{#if pool}}
+    pool='{{pool}}',
+{{/if}}
+{{#if retries}}
+    retries={{retries}},
+{{/if}}
+{{#if retry_delay}}
+    retry_delay=timedelta(minutes={{retry_delay}}),
+{{/if}}
+    dag=dag
+)
