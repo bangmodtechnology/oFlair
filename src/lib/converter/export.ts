@@ -9,6 +9,7 @@ import { formatReportAsText, formatReportAsJson, type ConversionReport } from ".
  * Download a single file
  */
 export function downloadFile(content: string, filename: string, mimeType: string = "text/plain"): void {
+  if (typeof document === "undefined") return;
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -71,6 +72,7 @@ export async function downloadAllAsZip(
   dagsFolder.file("requirements.txt", requirements);
 
   // Generate ZIP and download
+  if (typeof document === "undefined") return;
   const blob = await zip.generateAsync({ type: "blob" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");

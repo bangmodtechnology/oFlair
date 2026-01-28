@@ -12,6 +12,8 @@ Web application สำหรับแปลง Control-M Job Definitions เป�
 - React Flow (DAG Visualization)
 - Monaco Editor (Code Preview)
 - Vitest (Testing)
+- Prisma (ORM - SQLite/PostgreSQL)
+- Tauri v2 (Desktop App)
 
 ---
 
@@ -74,7 +76,9 @@ Web application สำหรับแปลง Control-M Job Definitions เป�
 - [x] localStorage for config persistence
 - [x] Export settings to JSON
 - [x] Import settings from JSON
-- [x] Storage abstraction layer (for future DB support)
+- [x] Storage abstraction layer (localStorage + Database via API)
+- [x] Dual storage mode: Local Storage / Database (selectable in Settings)
+- [x] Tauri v2 desktop app support (static export mode)
 
 ---
 
@@ -91,6 +95,9 @@ oflair/
 │   │   │   ├── history/page.tsx      # Conversion History
 │   │   │   ├── settings/page.tsx     # Settings
 │   │   │   └── layout.tsx            # Dashboard Layout with Sidebar
+│   │   ├── api/
+│   │   │   ├── config/route.ts       # Config CRUD API
+│   │   │   └── history/route.ts      # History List/Create/Delete API
 │   │   ├── layout.tsx                # Root Layout
 │   │   └── globals.css
 │   │
@@ -137,7 +144,8 @@ oflair/
 │   │   └── template.ts               # Template Types
 │   │
 │   ├── hooks/
-│   │   └── use-mobile.ts             # Mobile Detection Hook
+│   │   ├── use-mobile.ts             # Mobile Detection Hook
+│   │   └── use-storage.ts            # Storage Provider Hook + Tauri Detection
 │   │
 │   └── __tests__/                    # Unit Tests
 │       ├── parser.test.ts            # XML Parser Tests
@@ -155,7 +163,14 @@ oflair/
 │   └── email-operator.yaml
 │
 ├── samples/                          # Sample Control-M Files
-├── prisma/                           # Prisma Schema (unused)
+├── prisma/                           # Prisma Schema (SQLite/PostgreSQL)
+├── src-tauri/                        # Tauri v2 Desktop App
+│   ├── tauri.conf.json               # Tauri Configuration
+│   ├── Cargo.toml                    # Rust Dependencies
+│   ├── build.rs                      # Tauri Build Script
+│   └── src/
+│       ├── lib.rs                    # App Entry Point
+│       └── main.rs                   # Main Binary
 └── public/
 ```
 
@@ -253,6 +268,11 @@ npm start
 
 # Lint
 npm run lint
+
+# Tauri Desktop App
+npm run tauri:dev        # Development with hot reload
+npm run tauri:build      # Build distributable binary
+npm run build:static     # Next.js static export (for Tauri)
 ```
 
 ---
@@ -269,6 +289,8 @@ npm run lint
 | jszip | ZIP Generation |
 | sonner | Toast Notifications |
 | lucide-react | Icons |
+| @prisma/client | Database ORM |
+| @tauri-apps/cli | Desktop App Build Tool (dev) |
 
 ---
 
@@ -309,9 +331,9 @@ npm run test:coverage
 - [x] **Performance Optimization** - Search/filter, lazy rendering for large files
 - [x] **Storage Abstraction** - Interface for future database support
 
-### Future Enhancements
-- [ ] **Database Storage** - Optional PostgreSQL for history (interface ready)
-- [ ] **Desktop App** - Wrap with Tauri
+### Future Enhancements (Completed)
+- [x] **Database Storage** - Optional SQLite/PostgreSQL via Prisma + API routes, selectable in Settings
+- [x] **Desktop App** - Tauri v2 wrapper with static export support
 
 ### Known Issues (Resolved)
 - [x] Large files may slow down browser (1000+ jobs) - Added search, lazy rendering, and folder batching

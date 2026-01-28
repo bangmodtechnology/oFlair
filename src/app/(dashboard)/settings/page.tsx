@@ -14,6 +14,13 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Save,
   RotateCcw,
   HardDrive,
@@ -24,17 +31,21 @@ import {
   Download,
   Upload,
   FileJson,
+  Database,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  loadConfig,
-  saveConfig,
-  resetConfig,
   downloadSettingsAsJson,
   importSettingsFromJson,
   type AppConfig,
   DEFAULT_CONFIG,
 } from "@/lib/storage/config-storage";
+import {
+  useStorage,
+  useStorageMode,
+  isTauriEnvironment,
+  type StorageMode,
+} from "@/hooks/use-storage";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppConfig>(DEFAULT_CONFIG);
@@ -43,12 +54,20 @@ export default function SettingsPage() {
   const [includeHistoryInExport, setIncludeHistoryInExport] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load settings from localStorage on mount
+  const storage = useStorage();
+  const { mode: storageMode, setMode: setStorageMode } = useStorageMode();
+  const isTauri = typeof window !== "undefined" && isTauriEnvironment();
+
+  // Load settings from storage on mount
   useEffect(() => {
-    const loaded = loadConfig();
-    setSettings(loaded);
-    setIsLoaded(true);
-  }, []);
+    (async () => {
+      const loaded = await storage.getConfig();
+      if (loaded) {
+        setSettings(loaded);
+      }
+      setIsLoaded(true);
+    })();
+  }, [storage]);
 
   // Track unsaved changes
   useEffect(() => {
@@ -57,8 +76,8 @@ export default function SettingsPage() {
     }
   }, [settings, isLoaded]);
 
-  const handleSave = () => {
-    const success = saveConfig(settings);
+  const handleSave = async () => {
+    const success = await storage.saveConfig(settings);
     if (success) {
       toast.success("Settings saved successfully");
       setIsSaved(true);
@@ -67,9 +86,9 @@ export default function SettingsPage() {
     }
   };
 
-  const handleReset = () => {
-    const defaultSettings = resetConfig();
-    setSettings(defaultSettings);
+  const handleReset = async () => {
+    await storage.deleteConfig();
+    setSettings(DEFAULT_CONFIG);
     toast.info("Settings reset to defaults");
     setIsSaved(false);
   };
@@ -103,8 +122,10 @@ export default function SettingsPage() {
 
       if (result.success) {
         // Reload settings after import
-        const loaded = loadConfig();
-        setSettings(loaded);
+        const loaded = await storage.getConfig();
+        if (loaded) {
+          setSettings(loaded);
+        }
         setIsSaved(true);
 
         let message = "Settings imported";
@@ -123,6 +144,23 @@ export default function SettingsPage() {
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+  };
+
+  const handleStorageModeChange = (value: string) => {
+    setStorageMode(value as StorageMode);
+    toast.info(
+      value === "database"
+        ? "Switched to database storage"
+        : "Switched to local storage"
+    );
+    // Reload settings from the new provider
+    setTimeout(async () => {
+      const loaded = await storage.getConfig();
+      if (loaded) {
+        setSettings(loaded);
+      }
+      setIsSaved(true);
+    }, 100);
   };
 
   if (!isLoaded) {
@@ -323,34 +361,82 @@ export default function SettingsPage() {
               Storage
             </CardTitle>
             <CardDescription>
-              Settings and templates storage information
+              Settings and history storage configuration
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Storage Type</Label>
-              <p className="text-sm text-muted-foreground">
-                All settings and custom templates are stored in your browser&apos;s localStorage.
-                Data persists across sessions but is specific to this browser.
-              </p>
-            </div>
-
-            <Separator />
+            {/* Storage Backend Selector */}
+            {!isTauri && (
+              <>
+                <div className="space-y-2">
+                  <Label>Storage Backend</Label>
+                  <Select
+                    value={storageMode}
+                    onValueChange={handleStorageModeChange}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="local">
+                        <span className="flex items-center gap-2">
+                          <HardDrive className="h-4 w-4" />
+                          Local Storage (Browser)
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="database">
+                        <span className="flex items-center gap-2">
+                          <Database className="h-4 w-4" />
+                          Database (Server)
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {storageMode === "local"
+                      ? "Settings stored in your browser. Data is local to this device."
+                      : "Settings stored in the server database. Data persists across devices."}
+                  </p>
+                </div>
+                <Separator />
+              </>
+            )}
 
             <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="secondary">localStorage</Badge>
-              <Badge variant="outline">Browser Storage</Badge>
-              <Badge variant="outline" className="text-green-600 border-green-600">
-                No Database Required
+              <Badge variant="secondary">
+                {storageMode === "database" ? "Database" : "localStorage"}
               </Badge>
+              <Badge variant="outline">
+                {storageMode === "database" ? "Server Storage" : "Browser Storage"}
+              </Badge>
+              {storageMode === "local" && (
+                <Badge variant="outline" className="text-green-600 border-green-600">
+                  No Database Required
+                </Badge>
+              )}
+              {storageMode === "database" && (
+                <Badge variant="outline" className="text-blue-600 border-blue-600">
+                  Cross-Device Sync
+                </Badge>
+              )}
             </div>
 
-            <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800">
-              <p className="text-sm text-amber-800 dark:text-amber-200">
-                <strong>Note:</strong> Clearing browser data will remove your settings and custom templates.
-                Consider exporting important templates before clearing data.
-              </p>
-            </div>
+            {storageMode === "local" && (
+              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800">
+                <p className="text-sm text-amber-800 dark:text-amber-200">
+                  <strong>Note:</strong> Clearing browser data will remove your settings and custom templates.
+                  Consider exporting important templates before clearing data.
+                </p>
+              </div>
+            )}
+            {storageMode === "database" && (
+              <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  <strong>Note:</strong> Settings and history are stored in the server database.
+                  Data will persist even if you clear your browser data.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

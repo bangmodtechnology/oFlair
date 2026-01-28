@@ -68,3 +68,13 @@ model Setting {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model ConversionHistory {
+  id             String   @id @default(cuid())
+  sourceFile     String
+  sourceType     String // "xml" | "json" | "batch"
+  jobsConverted  String // JSON string of {jobName, dagId, operator}[]
+  airflowVersion String
+  status         String // "success" | "partial" | "failed"
+  timestamp      DateTime @default(now())
+}

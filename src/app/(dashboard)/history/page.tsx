@@ -36,27 +36,27 @@ import {
   AlertCircle,
   Clock,
 } from "lucide-react";
-import {
-  loadConversionHistory,
-  clearConversionHistory,
-  type ConversionHistoryItem,
-} from "@/lib/storage/config-storage";
+import { type ConversionHistoryItem } from "@/lib/storage/config-storage";
+import { useStorage } from "@/hooks/use-storage";
 import { toast } from "sonner";
 
 export default function HistoryPage() {
   const [history, setHistory] = useState<ConversionHistoryItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<ConversionHistoryItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const storage = useStorage();
 
   useEffect(() => {
-    const loaded = loadConversionHistory();
-    setHistory(loaded.reverse()); // Show newest first
-    setIsLoading(false);
-  }, []);
+    (async () => {
+      const loaded = await storage.getHistory();
+      setHistory(loaded); // API returns newest first
+      setIsLoading(false);
+    })();
+  }, [storage]);
 
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
     if (confirm("Are you sure you want to clear all conversion history?")) {
-      clearConversionHistory();
+      await storage.clearHistory();
       setHistory([]);
       toast.success("Conversion history cleared");
     }

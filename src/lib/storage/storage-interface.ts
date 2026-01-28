@@ -195,8 +195,98 @@ export interface APIProviderOptions {
 }
 
 export function createAPIProvider(options: APIProviderOptions): StorageProvider {
-  // Placeholder - implement when needed
-  throw new Error("API provider not implemented yet. Options: " + JSON.stringify(options));
+  const { baseUrl, headers = {} } = options;
+
+  const fetchAPI = (url: string, init?: RequestInit) =>
+    fetch(url, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...init?.headers,
+      },
+    });
+
+  return {
+    getName: () => "api",
+
+    isAvailable: () => typeof window !== "undefined",
+
+    getConfig: async () => {
+      try {
+        const res = await fetchAPI(`${baseUrl}/config`);
+        if (!res.ok) return null;
+        return res.json();
+      } catch {
+        return null;
+      }
+    },
+
+    saveConfig: async (config) => {
+      try {
+        const res = await fetchAPI(`${baseUrl}/config`, {
+          method: "PUT",
+          body: JSON.stringify(config),
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    },
+
+    deleteConfig: async () => {
+      try {
+        const res = await fetchAPI(`${baseUrl}/config`, { method: "DELETE" });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    },
+
+    getHistory: async () => {
+      try {
+        const res = await fetchAPI(`${baseUrl}/history`);
+        if (!res.ok) return [];
+        const items = await res.json();
+        return items.map((item: ConversionHistoryItem) => ({
+          ...item,
+          timestamp: new Date(item.timestamp),
+        }));
+      } catch {
+        return [];
+      }
+    },
+
+    addHistoryItem: async (item) => {
+      const res = await fetchAPI(`${baseUrl}/history`, {
+        method: "POST",
+        body: JSON.stringify(item),
+      });
+      if (!res.ok) throw new Error("Failed to add history item");
+      const created = await res.json();
+      return { ...created, timestamp: new Date(created.timestamp) };
+    },
+
+    deleteHistoryItem: async (id) => {
+      try {
+        const res = await fetchAPI(`${baseUrl}/history?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    },
+
+    clearHistory: async () => {
+      try {
+        const res = await fetchAPI(`${baseUrl}/history`, { method: "DELETE" });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    },
+  };
 }
 
 // Type exports

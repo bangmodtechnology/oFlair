@@ -48,7 +48,8 @@ import {
   type DivideStrategy,
   type ValidationResult,
 } from "@/lib/converter";
-import { addConversionToHistory, loadConfig, type AppConfig } from "@/lib/storage/config-storage";
+import { type AppConfig } from "@/lib/storage/config-storage";
+import { useStorage } from "@/hooks/use-storage";
 import { toast } from "sonner";
 
 const STEPS = [
@@ -93,12 +94,15 @@ export default function ConvertPage() {
   const [showReportDialog, setShowReportDialog] = useState(false);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [validationResults, setValidationResults] = useState<Map<string, ValidationResult> | null>(null);
+  const storage = useStorage();
 
-  // Load settings from localStorage on mount
+  // Load settings from storage on mount
   useEffect(() => {
-    const config = loadConfig();
-    setAppConfig(config);
-  }, []);
+    (async () => {
+      const config = await storage.getConfig();
+      setAppConfig(config);
+    })();
+  }, [storage]);
 
   const dividerStrategies = getDividerStrategies();
   const currentStepIndex = STEPS.findIndex((s) => s.id === step);
@@ -215,7 +219,7 @@ export default function ConvertPage() {
         ? `${batchFiles.length} files (${batchFiles.map((f) => f.file.name).join(", ")})`
         : inputFile?.name || "unknown.xml";
 
-      addConversionToHistory({
+      storage.addHistoryItem({
         sourceFile: sourceFileName,
         sourceType: isBatchMode ? "batch" : inputType || "xml",
         jobsConverted: result.dags.flatMap((dag) =>
@@ -244,7 +248,7 @@ export default function ConvertPage() {
         ? `${batchFiles.length} files`
         : inputFile?.name || "unknown.xml";
 
-      addConversionToHistory({
+      storage.addHistoryItem({
         sourceFile: sourceFileName,
         sourceType: isBatchMode ? "batch" : inputType || "xml",
         jobsConverted: [],

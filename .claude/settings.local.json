@@ -11,7 +11,15 @@
       "Bash(pkill:*)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(npm run test:run:*)"
+      "Bash(npm run test:run:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(npx tauri init:*)",
+      "Bash(npm run build:static:*)",
+      "Bash(rustup update:*)",
+      "Bash(npx tauri icon:*)",
+      "Bash(sips:*)"
     ]
   }
 }
