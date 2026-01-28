@@ -11,6 +11,7 @@ Web application สำหรับแปลง Control-M Job Definitions เป�
 - Zustand (State Management)
 - React Flow (DAG Visualization)
 - Monaco Editor (Code Preview)
+- Vitest (Testing)
 
 ---
 
@@ -23,6 +24,8 @@ Web application สำหรับแปลง Control-M Job Definitions เป�
 - [x] Support Airflow 2.5 - 3.1
 - [x] Download generated DAGs (.py files)
 - [x] Download all as ZIP with README + requirements.txt
+- [x] Batch processing - Upload multiple files at once
+- [x] DAG validation - Syntax check and circular dependency detection
 
 ### UI/UX
 - [x] 5-Step Wizard (Upload → Select Jobs → Configure → Review → Result)
@@ -31,6 +34,9 @@ Web application สำหรับแปลง Control-M Job Definitions เป�
 - [x] Dependency Graph visualization (React Flow)
 - [x] Dark/Light theme support
 - [x] Responsive sidebar navigation
+- [x] Search/filter jobs by name, type, or folder
+- [x] Batch mode toggle for multi-file upload
+- [x] Performance optimization for large files (1000+ jobs)
 
 ### Converter Engine
 - [x] Rules Engine for transformations
@@ -38,6 +44,8 @@ Web application สำหรับแปลง Control-M Job Definitions เป�
 - [x] Schedule Converter (Control-M → Cron)
 - [x] Conversion Report with warnings
 - [x] Dependency extraction (INCOND/OUTCOND)
+- [x] Cross-DAG Dependencies (ExternalTaskSensor)
+- [x] Settings integration (owner, retries, prefix/suffix)
 
 ### Operators Supported
 - [x] BashOperator
@@ -50,12 +58,23 @@ Web application สำหรับแปลง Control-M Job Definitions เป�
 - [x] EmailOperator
 - [x] SQLExecuteQueryOperator
 - [x] SimpleHttpOperator
+- [x] LambdaInvokeFunctionOperator (AWS)
+- [x] S3CopyObjectOperator (AWS)
+- [x] GlueJobOperator (AWS)
+- [x] SapHanaOperator (SAP)
+- [x] InformaticaCloudRunTaskOperator
+- [x] SparkSubmitOperator
+- [x] DatabricksSubmitRunOperator
+- [x] SFTPOperator
 
 ### Other Features
 - [x] Template management page
 - [x] Conversion history page
-- [x] Settings page (simplified)
+- [x] Settings page with import/export
 - [x] localStorage for config persistence
+- [x] Export settings to JSON
+- [x] Import settings from JSON
+- [x] Storage abstraction layer (for future DB support)
 
 ---
 
@@ -97,6 +116,7 @@ oflair/
 │   │   │   ├── dag-divider.ts        # DAG Splitting Strategies
 │   │   │   ├── schedule-converter.ts # Cron Expression Converter
 │   │   │   ├── report.ts             # Conversion Report Generator
+│   │   │   ├── validator.ts          # DAG Validation
 │   │   │   └── export.ts             # Download/Export Utilities
 │   │   ├── generator/
 │   │   │   ├── index.ts
@@ -104,7 +124,8 @@ oflair/
 │   │   ├── templates/
 │   │   │   └── template-loader.ts    # YAML Template Loader
 │   │   └── storage/
-│   │       └── config-storage.ts     # localStorage Wrapper
+│   │       ├── config-storage.ts     # localStorage Wrapper
+│   │       └── storage-interface.ts  # Storage Abstraction Layer
 │   │
 │   ├── store/
 │   │   ├── converter-store.ts        # Zustand Store for Converter
@@ -115,8 +136,13 @@ oflair/
 │   │   ├── airflow.ts                # Airflow Types
 │   │   └── template.ts               # Template Types
 │   │
-│   └── hooks/
-│       └── use-mobile.ts             # Mobile Detection Hook
+│   ├── hooks/
+│   │   └── use-mobile.ts             # Mobile Detection Hook
+│   │
+│   └── __tests__/                    # Unit Tests
+│       ├── parser.test.ts            # XML Parser Tests
+│       ├── rules.test.ts             # Rules Engine Tests
+│       └── validator.test.ts         # DAG Validator Tests
 │
 ├── templates/                        # YAML Operator Templates
 │   ├── bash-operator.yaml
@@ -273,18 +299,22 @@ npm run test:coverage
 - [x] **Validate Generated DAG** - Syntax check Python code
 - [x] **Add Unit Tests** - Parser, Converter, Rules (65 tests)
 
-### Medium Priority
-- [x] **Support More Job Types** - SAP, Informatica, AWS Lambda
+### Medium Priority (Completed)
+- [x] **Support More Job Types** - SAP, Informatica, AWS Lambda, Spark, Databricks, SFTP
 - [x] **Cross-DAG Dependencies** - ExternalTaskSensor for split DAGs
-- [x] **Batch Processing** - Multiple files at once
-- [x] **Import/Export Settings** - JSON export for settings
+- [x] **Batch Processing** - Multiple files at once with batch mode toggle
+- [x] **Import/Export Settings** - JSON export/import for settings and history
 
-### Low Priority
-- [ ] **Database Storage** - Optional PostgreSQL for history
+### Low Priority (Completed)
+- [x] **Performance Optimization** - Search/filter, lazy rendering for large files
+- [x] **Storage Abstraction** - Interface for future database support
+
+### Future Enhancements
+- [ ] **Database Storage** - Optional PostgreSQL for history (interface ready)
 - [ ] **Desktop App** - Wrap with Tauri
 
-### Known Issues
-- [ ] Large files may slow down browser (1000+ jobs)
+### Known Issues (Resolved)
+- [x] Large files may slow down browser (1000+ jobs) - Added search, lazy rendering, and folder batching
 
 ---
 
