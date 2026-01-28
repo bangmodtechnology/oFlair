@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useConverterStore } from "@/store/converter-store";
 
 export function FileUploader() {
-  const { inputFile, setInputFile, setInputContent, setInputType, setStep } =
+  const { inputFile, setInputFile, setInputContent, setInputType, setParsedDefinition } =
     useConverterStore();
 
   const onDrop = useCallback(
@@ -28,9 +28,9 @@ export function FileUploader() {
       setInputFile(file);
       setInputContent(content);
       setInputType(extension as "xml" | "json");
-      setStep("select");
+      // Don't change step here - let the convert page handle it after parsing
     },
-    [setInputFile, setInputContent, setInputType, setStep]
+    [setInputFile, setInputContent, setInputType]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -47,7 +47,7 @@ export function FileUploader() {
     setInputFile(null);
     setInputContent("");
     setInputType(null);
-    setStep("upload");
+    setParsedDefinition(null);
   };
 
   if (inputFile) {

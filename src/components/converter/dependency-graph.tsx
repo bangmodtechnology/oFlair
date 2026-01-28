@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useEffect } from "react";
 import {
   ReactFlow,
   Node,
@@ -52,6 +52,7 @@ const operatorIcons: Record<string, React.ReactNode> = {
   EmailOperator: <Mail className="h-4 w-4" />,
 };
 
+// Tailwind classes for node styling
 const operatorColors: Record<string, string> = {
   BashOperator: "bg-orange-500",
   PythonOperator: "bg-blue-500",
@@ -67,6 +68,24 @@ const operatorColors: Record<string, string> = {
   WasbBlobSensor: "bg-sky-500",
   SSHOperator: "bg-slate-600",
   EmailOperator: "bg-red-500",
+};
+
+// Hex colors for MiniMap
+const operatorHexColors: Record<string, string> = {
+  BashOperator: "#f97316",
+  PythonOperator: "#3b82f6",
+  EmptyOperator: "#9ca3af",
+  FileSensor: "#a855f7",
+  TimeSensor: "#ec4899",
+  DateTimeSensor: "#ec4899",
+  ExternalTaskSensor: "#6366f1",
+  SQLExecuteQueryOperator: "#22c55e",
+  S3KeySensor: "#eab308",
+  GCSObjectExistenceSensor: "#06b6d4",
+  KubernetesPodOperator: "#2563eb",
+  WasbBlobSensor: "#0ea5e9",
+  SSHOperator: "#475569",
+  EmailOperator: "#ef4444",
 };
 
 function TaskNode({ data }: NodeProps) {
@@ -181,33 +200,32 @@ function layoutNodes(tasks: AirflowTask[], dependencies: AirflowDAG["dependencie
 }
 
 export function DependencyGraph({ dag }: DependencyGraphProps) {
-  const initialNodes = useMemo(
-    () => layoutNodes(dag.tasks, dag.dependencies),
-    [dag.tasks, dag.dependencies]
-  );
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  const initialEdges: Edge[] = useMemo(
-    () =>
-      dag.dependencies.map((dep, index) => ({
-        id: `e${index}-${dep.upstream}-${dep.downstream}`,
-        source: dep.upstream,
-        target: dep.downstream,
-        type: "smoothstep",
-        animated: true,
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          width: 20,
-          height: 20,
-        },
-        style: {
-          strokeWidth: 2,
-        },
-      })),
-    [dag.dependencies]
-  );
+  // Update nodes and edges when dag changes
+  useEffect(() => {
+    const newNodes = layoutNodes(dag.tasks, dag.dependencies);
+    const newEdges: Edge[] = dag.dependencies.map((dep, index) => ({
+      id: `e${index}-${dep.upstream}-${dep.downstream}`,
+      source: dep.upstream,
+      target: dep.downstream,
+      type: "smoothstep",
+      animated: true,
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 20,
+        height: 20,
+      },
+      style: {
+        strokeWidth: 2,
+        stroke: "#6366f1",
+      },
+    }));
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+    setNodes(newNodes);
+    setEdges(newEdges);
+  }, [dag.tasks, dag.dependencies, setNodes, setEdges]);
 
   const operatorStats = useMemo(() => {
     const stats = new Map<string, number>();
@@ -218,7 +236,7 @@ export function DependencyGraph({ dag }: DependencyGraphProps) {
   }, [dag.tasks]);
 
   return (
-    <div className="h-full w-full">
+    <div style={{ height: "360px", width: "100%" }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -226,7 +244,7 @@ export function DependencyGraph({ dag }: DependencyGraphProps) {
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
+        fitViewOptions={{ padding: 0.3 }}
         minZoom={0.1}
         maxZoom={2}
         defaultEdgeOptions={{
@@ -234,21 +252,15 @@ export function DependencyGraph({ dag }: DependencyGraphProps) {
         }}
       >
         <Background gap={16} size={1} />
-        <Controls />
+        <Controls position="bottom-right" />
         <MiniMap
           nodeColor={(node) => {
             const task = node.data?.task as AirflowTask;
-            if (!task) return "#888";
-            const color = operatorColors[task.operatorType];
-            if (color) {
-              return color
-                .replace("bg-", "")
-                .replace("-500", "")
-                .replace("-600", "");
-            }
-            return "#888";
+            if (!task) return "#888888";
+            return operatorHexColors[task.operatorType] || "#888888";
           }}
           maskColor="rgba(0, 0, 0, 0.1)"
+          position="bottom-left"
         />
         <Panel position="top-left" className="bg-card/90 backdrop-blur border rounded-lg p-3 shadow-lg">
           <div className="space-y-2">
