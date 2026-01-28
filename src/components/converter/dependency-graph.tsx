@@ -29,6 +29,12 @@ import {
   Server,
   FileSearch,
   CircleDot,
+  Zap,
+  HardDrive,
+  Cog,
+  Workflow,
+  Flame,
+  FolderSync,
 } from "lucide-react";
 
 interface DependencyGraphProps {
@@ -50,6 +56,19 @@ const operatorIcons: Record<string, React.ReactNode> = {
   WasbBlobSensor: <Cloud className="h-4 w-4" />,
   SSHOperator: <Server className="h-4 w-4" />,
   EmailOperator: <Mail className="h-4 w-4" />,
+  // AWS
+  LambdaInvokeFunctionOperator: <Zap className="h-4 w-4" />,
+  S3CopyObjectOperator: <Cloud className="h-4 w-4" />,
+  GlueJobOperator: <Cog className="h-4 w-4" />,
+  // SAP
+  SapHanaOperator: <Database className="h-4 w-4" />,
+  // Informatica
+  InformaticaCloudRunTaskOperator: <Workflow className="h-4 w-4" />,
+  // Spark/Databricks
+  SparkSubmitOperator: <Flame className="h-4 w-4" />,
+  DatabricksSubmitRunOperator: <HardDrive className="h-4 w-4" />,
+  // SFTP
+  SFTPOperator: <FolderSync className="h-4 w-4" />,
 };
 
 // Tailwind classes for node styling
@@ -68,6 +87,19 @@ const operatorColors: Record<string, string> = {
   WasbBlobSensor: "bg-sky-500",
   SSHOperator: "bg-slate-600",
   EmailOperator: "bg-red-500",
+  // AWS
+  LambdaInvokeFunctionOperator: "bg-amber-500",
+  S3CopyObjectOperator: "bg-amber-600",
+  GlueJobOperator: "bg-amber-700",
+  // SAP
+  SapHanaOperator: "bg-blue-800",
+  // Informatica
+  InformaticaCloudRunTaskOperator: "bg-rose-500",
+  // Spark/Databricks
+  SparkSubmitOperator: "bg-orange-600",
+  DatabricksSubmitRunOperator: "bg-red-600",
+  // SFTP
+  SFTPOperator: "bg-teal-500",
 };
 
 // Hex colors for MiniMap
@@ -86,6 +118,19 @@ const operatorHexColors: Record<string, string> = {
   WasbBlobSensor: "#0ea5e9",
   SSHOperator: "#475569",
   EmailOperator: "#ef4444",
+  // AWS
+  LambdaInvokeFunctionOperator: "#f59e0b",
+  S3CopyObjectOperator: "#d97706",
+  GlueJobOperator: "#b45309",
+  // SAP
+  SapHanaOperator: "#1e40af",
+  // Informatica
+  InformaticaCloudRunTaskOperator: "#f43f5e",
+  // Spark/Databricks
+  SparkSubmitOperator: "#ea580c",
+  DatabricksSubmitRunOperator: "#dc2626",
+  // SFTP
+  SFTPOperator: "#14b8a6",
 };
 
 function TaskNode({ data }: NodeProps) {

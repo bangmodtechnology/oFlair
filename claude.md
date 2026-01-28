@@ -246,27 +246,44 @@ npm run lint
 
 ---
 
+## Testing
+
+```bash
+# Run tests
+npm test
+
+# Run tests once
+npm run test:run
+
+# Run with coverage
+npm run test:coverage
+```
+
+**Test coverage:**
+- `src/__tests__/rules.test.ts` - Rules engine (32 tests)
+- `src/__tests__/parser.test.ts` - XML parser (12 tests)
+- `src/__tests__/validator.test.ts` - DAG validator (21 tests)
+
+---
+
 ## TODO / Future Improvements
 
-### High Priority
-- [ ] **Integrate Settings into Converter** - Load defaultOwner, dagIdPrefix from settings
-- [ ] **Validate Generated DAG** - Syntax check Python code
-- [ ] **Add Unit Tests** - Parser, Converter, Rules
+### High Priority (Completed)
+- [x] **Integrate Settings into Converter** - Load defaultOwner, dagIdPrefix from settings
+- [x] **Validate Generated DAG** - Syntax check Python code
+- [x] **Add Unit Tests** - Parser, Converter, Rules (65 tests)
 
 ### Medium Priority
-- [ ] **Support More Job Types** - SAP, Informatica, AWS Lambda
-- [ ] **Cross-DAG Dependencies** - ExternalTaskSensor for split DAGs
-- [ ] **Batch Processing** - Multiple files at once
-- [ ] **Import/Export Settings** - JSON export for settings
+- [x] **Support More Job Types** - SAP, Informatica, AWS Lambda
+- [x] **Cross-DAG Dependencies** - ExternalTaskSensor for split DAGs
+- [x] **Batch Processing** - Multiple files at once
+- [x] **Import/Export Settings** - JSON export for settings
 
 ### Low Priority
 - [ ] **Database Storage** - Optional PostgreSQL for history
-- [ ] **User Authentication** - Login system
-- [ ] **API Mode** - REST API for CLI integration
 - [ ] **Desktop App** - Wrap with Tauri
 
 ### Known Issues
-- [ ] Settings not integrated with converter (uses hardcoded defaults)
 - [ ] Large files may slow down browser (1000+ jobs)
 
 ---

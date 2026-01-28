@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,12 +13,25 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Save, RotateCcw, HardDrive, Code, Settings2, Check, Info } from "lucide-react";
+import {
+  Save,
+  RotateCcw,
+  HardDrive,
+  Code,
+  Settings2,
+  Check,
+  Info,
+  Download,
+  Upload,
+  FileJson,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   loadConfig,
   saveConfig,
   resetConfig,
+  downloadSettingsAsJson,
+  importSettingsFromJson,
   type AppConfig,
   DEFAULT_CONFIG,
 } from "@/lib/storage/config-storage";
@@ -27,6 +40,8 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<AppConfig>(DEFAULT_CONFIG);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSaved, setIsSaved] = useState(true);
+  const [includeHistoryInExport, setIncludeHistoryInExport] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -57,6 +72,57 @@ export default function SettingsPage() {
     setSettings(defaultSettings);
     toast.info("Settings reset to defaults");
     setIsSaved(false);
+  };
+
+  const handleExport = () => {
+    const success = downloadSettingsAsJson(
+      `oflair-settings-${new Date().toISOString().split("T")[0]}.json`,
+      includeHistoryInExport
+    );
+    if (success) {
+      toast.success("Settings exported successfully");
+    } else {
+      toast.error("Failed to export settings");
+    }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const content = await file.text();
+      const result = importSettingsFromJson(content, {
+        importConfig: true,
+        importHistory: true,
+      });
+
+      if (result.success) {
+        // Reload settings after import
+        const loaded = loadConfig();
+        setSettings(loaded);
+        setIsSaved(true);
+
+        let message = "Settings imported";
+        if (result.historyImported && result.historyImported > 0) {
+          message += ` (${result.historyImported} history items added)`;
+        }
+        toast.success(message);
+      } else {
+        toast.error(result.error || "Failed to import settings");
+      }
+    } catch (error) {
+      toast.error("Failed to read file");
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   if (!isLoaded) {
@@ -283,6 +349,69 @@ export default function SettingsPage() {
               <p className="text-sm text-amber-800 dark:text-amber-200">
                 <strong>Note:</strong> Clearing browser data will remove your settings and custom templates.
                 Consider exporting important templates before clearing data.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Import/Export */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileJson className="h-5 w-5" />
+              Import / Export
+            </CardTitle>
+            <CardDescription>
+              Backup or restore your settings as JSON
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Export Section */}
+            <div className="space-y-3">
+              <Label>Export Settings</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="includeHistory"
+                  checked={includeHistoryInExport}
+                  onChange={(e) => setIncludeHistoryInExport(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <Label htmlFor="includeHistory" className="font-normal text-sm">
+                  Include conversion history
+                </Label>
+              </div>
+              <Button onClick={handleExport} variant="outline" className="w-full">
+                <Download className="h-4 w-4 mr-2" />
+                Export Settings to JSON
+              </Button>
+            </div>
+
+            <Separator />
+
+            {/* Import Section */}
+            <div className="space-y-3">
+              <Label>Import Settings</Label>
+              <p className="text-sm text-muted-foreground">
+                Upload a previously exported JSON file to restore your settings.
+              </p>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept=".json,application/json"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <Button onClick={handleImportClick} variant="outline" className="w-full">
+                <Upload className="h-4 w-4 mr-2" />
+                Import Settings from JSON
+              </Button>
+            </div>
+
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
+              <Info className="h-4 w-4 mt-0.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                Importing settings will overwrite your current configuration. History items will be merged without duplicates.
               </p>
             </div>
           </CardContent>

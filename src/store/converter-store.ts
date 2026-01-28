@@ -4,12 +4,25 @@ import type { GeneratedDAG } from '@/types/airflow';
 import type { ConversionReport } from '@/lib/converter/report';
 import type { DivideStrategy } from '@/lib/converter/dag-divider';
 
+// Batch file input
+export interface BatchFileInput {
+  file: File;
+  content: string;
+  type: 'xml' | 'json';
+  parsed?: ControlMDefinition;
+  error?: string;
+}
+
 interface ConversionState {
-  // Input state
+  // Input state (single file - backwards compatible)
   inputFile: File | null;
   inputContent: string;
   inputType: 'xml' | 'json' | null;
   parsedDefinition: ControlMDefinition | null;
+
+  // Batch input state
+  batchFiles: BatchFileInput[];
+  isBatchMode: boolean;
 
   // Selection
   selectedJobs: string[];
@@ -31,6 +44,14 @@ interface ConversionState {
   setInputContent: (content: string) => void;
   setInputType: (type: 'xml' | 'json' | null) => void;
   setParsedDefinition: (definition: ControlMDefinition | null) => void;
+  // Batch actions
+  addBatchFiles: (files: BatchFileInput[]) => void;
+  removeBatchFile: (index: number) => void;
+  setBatchFileParsed: (index: number, parsed: ControlMDefinition) => void;
+  setBatchFileError: (index: number, error: string) => void;
+  clearBatchFiles: () => void;
+  setIsBatchMode: (isBatch: boolean) => void;
+  // Selection actions
   setSelectedJobs: (jobs: string[]) => void;
   toggleJobSelection: (jobName: string) => void;
   selectAllJobs: () => void;
@@ -42,6 +63,8 @@ interface ConversionState {
   setError: (error: string | null) => void;
   setStep: (step: 'upload' | 'select' | 'configure' | 'review' | 'result') => void;
   reset: () => void;
+  // Helpers
+  getAllJobs: () => ControlMJob[];
 }
 
 const initialState = {
@@ -49,6 +72,8 @@ const initialState = {
   inputContent: '',
   inputType: null as 'xml' | 'json' | null,
   parsedDefinition: null,
+  batchFiles: [] as BatchFileInput[],
+  isBatchMode: false,
   selectedJobs: [] as string[],
   generatedDags: [] as GeneratedDAG[],
   conversionReport: null as ConversionReport | null,
@@ -74,6 +99,49 @@ export const useConverterStore = create<ConversionState>((set, get) => ({
       selectedJobs: allJobs,
     });
   },
+
+  // Batch file actions
+  addBatchFiles: (files) => {
+    const { batchFiles } = get();
+    set({
+      batchFiles: [...batchFiles, ...files],
+      isBatchMode: true,
+    });
+  },
+
+  removeBatchFile: (index) => {
+    const { batchFiles } = get();
+    const newFiles = batchFiles.filter((_, i) => i !== index);
+    set({
+      batchFiles: newFiles,
+      isBatchMode: newFiles.length > 0,
+    });
+  },
+
+  setBatchFileParsed: (index, parsed) => {
+    const { batchFiles } = get();
+    const newFiles = [...batchFiles];
+    newFiles[index] = { ...newFiles[index], parsed };
+    // Update selected jobs with all jobs from all parsed files
+    const allJobs: string[] = [];
+    for (const file of newFiles) {
+      if (file.parsed) {
+        allJobs.push(...file.parsed.jobs.map((j) => j.JOBNAME));
+      }
+    }
+    set({ batchFiles: newFiles, selectedJobs: allJobs });
+  },
+
+  setBatchFileError: (index, error) => {
+    const { batchFiles } = get();
+    const newFiles = [...batchFiles];
+    newFiles[index] = { ...newFiles[index], error };
+    set({ batchFiles: newFiles });
+  },
+
+  clearBatchFiles: () => set({ batchFiles: [], isBatchMode: false }),
+
+  setIsBatchMode: (isBatch) => set({ isBatchMode: isBatch }),
 
   setSelectedJobs: (jobs) => set({ selectedJobs: jobs }),
 
@@ -107,4 +175,19 @@ export const useConverterStore = create<ConversionState>((set, get) => ({
   setStep: (step) => set({ step }),
 
   reset: () => set(initialState),
+
+  // Get all jobs from single file or batch files
+  getAllJobs: () => {
+    const { parsedDefinition, batchFiles, isBatchMode } = get();
+    if (isBatchMode) {
+      const allJobs: ControlMJob[] = [];
+      for (const file of batchFiles) {
+        if (file.parsed) {
+          allJobs.push(...file.parsed.jobs);
+        }
+      }
+      return allJobs;
+    }
+    return parsedDefinition?.jobs ?? [];
+  },
 }));

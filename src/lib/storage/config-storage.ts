@@ -19,7 +19,7 @@ export interface ConversionHistoryItem {
   id: string;
   timestamp: Date;
   sourceFile: string;
-  sourceType: "xml" | "json";
+  sourceType: "xml" | "json" | "batch";
   jobsConverted: {
     jobName: string;
     dagId: string;
@@ -141,6 +141,110 @@ export function clearConversionHistory(): boolean {
     return true;
   } catch (error) {
     console.error("Failed to clear conversion history:", error);
+    return false;
+  }
+}
+
+// Export/Import functions
+
+export interface ExportData {
+  version: string;
+  exportedAt: string;
+  config: AppConfig;
+  history?: ConversionHistoryItem[];
+}
+
+/**
+ * Export settings to JSON string
+ */
+export function exportSettingsToJson(includeHistory: boolean = false): string {
+  const config = loadConfig();
+  const exportData: ExportData = {
+    version: "1.0",
+    exportedAt: new Date().toISOString(),
+    config,
+  };
+
+  if (includeHistory) {
+    exportData.history = loadConversionHistory();
+  }
+
+  return JSON.stringify(exportData, null, 2);
+}
+
+/**
+ * Import settings from JSON string
+ */
+export function importSettingsFromJson(
+  jsonString: string,
+  options: { importConfig?: boolean; importHistory?: boolean } = { importConfig: true, importHistory: false }
+): { success: boolean; error?: string; configImported?: boolean; historyImported?: number } {
+  try {
+    const data = JSON.parse(jsonString) as ExportData;
+
+    // Validate structure
+    if (!data.version || !data.config) {
+      return { success: false, error: "Invalid export file format" };
+    }
+
+    let configImported = false;
+    let historyImported = 0;
+
+    // Import config
+    if (options.importConfig && data.config) {
+      const mergedConfig = { ...DEFAULT_CONFIG, ...data.config };
+      saveConfig(mergedConfig);
+      configImported = true;
+    }
+
+    // Import history
+    if (options.importHistory && data.history && Array.isArray(data.history)) {
+      const existingHistory = loadConversionHistory();
+      const existingIds = new Set(existingHistory.map((h) => h.id));
+
+      // Only add items that don't already exist
+      const newItems = data.history.filter((item) => !existingIds.has(item.id));
+      const mergedHistory = [...existingHistory, ...newItems];
+      saveConversionHistory(mergedHistory);
+      historyImported = newItems.length;
+    }
+
+    return { success: true, configImported, historyImported };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to parse JSON",
+    };
+  }
+}
+
+/**
+ * Download settings as JSON file (browser only)
+ */
+export function downloadSettingsAsJson(
+  filename: string = "oflair-settings.json",
+  includeHistory: boolean = false
+): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    const json = exportSettingsToJson(includeHistory);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    return true;
+  } catch (error) {
+    console.error("Failed to download settings:", error);
     return false;
   }
 }

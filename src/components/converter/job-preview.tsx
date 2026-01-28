@@ -9,8 +9,10 @@ import {
   FileCode,
   ChevronRight,
   ChevronDown,
+  Files,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import type { ControlMJob } from "@/types/controlm";
 
 // Custom Checkbox component if not available from shadcn
 function CheckboxSimple({
@@ -37,13 +39,24 @@ export function JobPreview() {
     toggleJobSelection,
     selectAllJobs,
     deselectAllJobs,
+    // Batch mode
+    batchFiles,
+    isBatchMode,
+    getAllJobs,
+    setSelectedJobs,
   } = useConverterStore();
 
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
     new Set()
   );
 
-  if (!parsedDefinition) {
+  // Get all jobs from single file or batch files
+  const allJobs = useMemo(() => getAllJobs(), [getAllJobs, parsedDefinition, batchFiles]);
+
+  // Check if we have any jobs to show
+  const hasJobs = allJobs.length > 0;
+
+  if (!hasJobs) {
     return (
       <Card>
         <CardHeader>
@@ -66,13 +79,22 @@ export function JobPreview() {
     setExpandedFolders(newExpanded);
   };
 
-  const allSelected = selectedJobs.length === parsedDefinition.jobs.length;
+  const allSelected = selectedJobs.length === allJobs.length;
   const someSelected =
     selectedJobs.length > 0 &&
-    selectedJobs.length < parsedDefinition.jobs.length;
+    selectedJobs.length < allJobs.length;
+
+  // Select/deselect all using all jobs
+  const handleSelectAll = () => {
+    if (allSelected) {
+      setSelectedJobs([]);
+    } else {
+      setSelectedJobs(allJobs.map((j) => j.JOBNAME));
+    }
+  };
 
   // Group jobs by folder
-  const jobsByFolder = parsedDefinition.jobs.reduce(
+  const jobsByFolder = allJobs.reduce(
     (acc, job) => {
       const folder = job.FOLDER_NAME || "Ungrouped";
       if (!acc[folder]) {
@@ -81,15 +103,21 @@ export function JobPreview() {
       acc[folder].push(job);
       return acc;
     },
-    {} as Record<string, typeof parsedDefinition.jobs>
+    {} as Record<string, ControlMJob[]>
   );
 
   return (
     <Card className="h-full">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base">
-            Jobs ({parsedDefinition.jobs.length})
+          <CardTitle className="text-base flex items-center gap-2">
+            {isBatchMode && <Files className="h-4 w-4" />}
+            Jobs ({allJobs.length})
+            {isBatchMode && (
+              <Badge variant="outline" className="text-xs ml-2">
+                from {batchFiles.filter((f) => f.parsed).length} files
+              </Badge>
+            )}
           </CardTitle>
           <div className="flex items-center gap-2">
             <Badge variant="secondary">
@@ -97,7 +125,7 @@ export function JobPreview() {
             </Badge>
             <button
               className="text-xs text-primary hover:underline"
-              onClick={allSelected ? deselectAllJobs : selectAllJobs}
+              onClick={handleSelectAll}
             >
               {allSelected ? "Deselect all" : "Select all"}
             </button>

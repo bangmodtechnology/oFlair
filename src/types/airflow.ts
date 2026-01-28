@@ -76,6 +76,25 @@ export const AIRFLOW_OPERATORS = {
 
   // HTTP
   SIMPLE_HTTP: 'SimpleHttpOperator',
+
+  // AWS
+  LAMBDA_INVOKE: 'LambdaInvokeFunctionOperator',
+  S3_COPY: 'S3CopyObjectOperator',
+  GLUE: 'GlueJobOperator',
+
+  // SAP
+  SAP_HANA: 'SapHanaOperator',
+
+  // Informatica
+  INFORMATICA_CLOUD: 'InformaticaCloudRunTaskOperator',
+
+  // Spark/Databricks
+  SPARK_SUBMIT: 'SparkSubmitOperator',
+  DATABRICKS_SUBMIT: 'DatabricksSubmitRunOperator',
+
+  // SFTP
+  SFTP: 'SFTPOperator',
+  SFTP_SENSOR: 'SFTPSensor',
 } as const;
 
 export type AirflowOperatorType = typeof AIRFLOW_OPERATORS[keyof typeof AIRFLOW_OPERATORS];

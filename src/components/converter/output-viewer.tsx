@@ -23,12 +23,16 @@ import {
   BarChart3,
   GitBranch,
   Code2,
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import { downloadDag, downloadAllAsZip, copyToClipboard } from "@/lib/converter/export";
 import { toast } from "sonner";
 import { DependencyGraph } from "./dependency-graph";
+import type { ValidationResult } from "@/lib/converter";
 
 const MonacoEditor = dynamic(
   () => import("@monaco-editor/react").then((mod) => mod.default),
@@ -37,9 +41,10 @@ const MonacoEditor = dynamic(
 
 interface OutputViewerProps {
   onShowReport?: () => void;
+  validationResults?: Map<string, ValidationResult> | null;
 }
 
-export function OutputViewer({ onShowReport }: OutputViewerProps) {
+export function OutputViewer({ onShowReport, validationResults }: OutputViewerProps) {
   const { generatedDags, conversionReport } = useConverterStore();
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -203,6 +208,28 @@ export function OutputViewer({ onShowReport }: OutputViewerProps) {
                       {dag.dag.dependencies.length} deps
                     </Badge>
                   )}
+                  {/* Validation Status */}
+                  {validationResults?.get(dag.filename) && (
+                    <>
+                      {validationResults.get(dag.filename)!.valid ? (
+                        <Badge variant="outline" className="text-xs text-green-600 border-green-600 gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Valid
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs text-red-600 border-red-600 gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          {validationResults.get(dag.filename)!.errors.length} error(s)
+                        </Badge>
+                      )}
+                      {validationResults.get(dag.filename)!.warnings.length > 0 && (
+                        <Badge variant="outline" className="text-xs text-yellow-600 border-yellow-600 gap-1">
+                          <AlertTriangle className="h-3 w-3" />
+                          {validationResults.get(dag.filename)!.warnings.length} warning(s)
+                        </Badge>
+                      )}
+                    </>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex items-center border rounded-md overflow-hidden">
@@ -269,6 +296,36 @@ export function OutputViewer({ onShowReport }: OutputViewerProps) {
                   <DependencyGraph dag={dag.dag} />
                 )}
               </div>
+              {/* Validation Details */}
+              {validationResults?.get(dag.filename) &&
+               (validationResults.get(dag.filename)!.errors.length > 0 ||
+                validationResults.get(dag.filename)!.warnings.length > 0) && (
+                <div className="px-4 py-3 border-t bg-muted/20">
+                  <p className="text-xs font-medium mb-2">Validation Issues:</p>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {validationResults.get(dag.filename)!.errors.map((err, i) => (
+                      <div key={`err-${i}`} className="flex items-start gap-2 text-xs">
+                        <AlertCircle className="h-3 w-3 text-red-500 mt-0.5 shrink-0" />
+                        <span className="text-red-600">
+                          {err.message}
+                          {err.line && <span className="text-muted-foreground"> (line {err.line})</span>}
+                          {err.taskId && <span className="text-muted-foreground"> [{err.taskId}]</span>}
+                        </span>
+                      </div>
+                    ))}
+                    {validationResults.get(dag.filename)!.warnings.map((warn, i) => (
+                      <div key={`warn-${i}`} className="flex items-start gap-2 text-xs">
+                        <AlertTriangle className="h-3 w-3 text-yellow-500 mt-0.5 shrink-0" />
+                        <span className="text-yellow-600">
+                          {warn.message}
+                          {warn.line && <span className="text-muted-foreground"> (line {warn.line})</span>}
+                          {warn.taskId && <span className="text-muted-foreground"> [{warn.taskId}]</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </TabsContent>
           ))}
         </Tabs>

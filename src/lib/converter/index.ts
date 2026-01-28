@@ -16,6 +16,7 @@ export { Rules, RULE_CHAINS } from "./rules";
 export { divideJobs, getDividerStrategies, type DivideStrategy, type DivideOptions, type DividedGroup } from "./dag-divider";
 export { convertSchedule, cronToHuman, validateCron, type ControlMSchedule, type AirflowSchedule } from "./schedule-converter";
 export { generateReport, formatReportAsText, formatReportAsJson, type ConversionReport, type ConversionWarning } from "./report";
+export { validateDAG, validateGeneratedDAG, validateAllDAGs, type ValidationResult, type ValidationError } from "./validator";
 
 /**
  * Airflow version type
@@ -70,7 +71,10 @@ export async function convertControlMToAirflow(
   // Step 1: Divide jobs into groups
   const groups = divideJobs(jobs, divideStrategy);
 
-  // Step 2: Convert each group to a DAG
+  // Step 2: Build cross-DAG dependency map (for ExternalTaskSensor)
+  const crossDagMap = buildCrossDagMap(groups, dagIdPrefix, dagIdSuffix);
+
+  // Step 3: Convert each group to a DAG
   const dags: GeneratedDAG[] = [];
 
   for (const group of groups) {
@@ -84,7 +88,7 @@ export async function convertControlMToAirflow(
       dagIdSuffix,
       includeComments,
       timezone,
-    });
+    }, crossDagMap);
     dags.push(dag);
   }
 
@@ -97,11 +101,88 @@ export async function convertControlMToAirflow(
 }
 
 /**
+ * Cross-DAG dependency info
+ */
+interface CrossDagDependency {
+  sourceJobName: string;
+  sourceTaskId: string;
+  sourceDagId: string;
+  conditionName: string;
+}
+
+/**
+ * Map from job name to its DAG info
+ */
+type CrossDagMap = Map<string, { dagId: string; taskId: string; conditions: string[] }>;
+
+/**
+ * Build a map of all jobs to their target DAG IDs for cross-DAG dependency detection
+ */
+function buildCrossDagMap(
+  groups: DividedGroup[],
+  dagIdPrefix: string,
+  dagIdSuffix: string
+): CrossDagMap {
+  const map: CrossDagMap = new Map();
+
+  for (const group of groups) {
+    let dagId = Rules.applyChain(group.groupName, RULE_CHAINS.dagId);
+    if (dagIdPrefix) dagId = `${dagIdPrefix}${dagId}`;
+    if (dagIdSuffix) dagId = `${dagId}${dagIdSuffix}`;
+
+    for (const job of group.jobs) {
+      const taskId = Rules.applyChain(job.JOBNAME, RULE_CHAINS.taskId);
+      const conditions = job.OUTCOND?.map((c) => c.NAME) || [];
+      map.set(job.JOBNAME, { dagId, taskId, conditions });
+    }
+  }
+
+  return map;
+}
+
+/**
+ * Find cross-DAG dependencies for a group
+ */
+function findCrossDagDependencies(
+  jobs: ControlMJob[],
+  currentDagId: string,
+  crossDagMap: CrossDagMap
+): CrossDagDependency[] {
+  const crossDeps: CrossDagDependency[] = [];
+  const seenConditions = new Set<string>();
+
+  for (const job of jobs) {
+    if (!job.INCOND) continue;
+
+    for (const cond of job.INCOND) {
+      // Check if this condition comes from another DAG
+      for (const [sourceJobName, info] of crossDagMap) {
+        if (info.dagId !== currentDagId && info.conditions.includes(cond.NAME)) {
+          // This is a cross-DAG dependency
+          if (!seenConditions.has(cond.NAME)) {
+            seenConditions.add(cond.NAME);
+            crossDeps.push({
+              sourceJobName,
+              sourceTaskId: info.taskId,
+              sourceDagId: info.dagId,
+              conditionName: cond.NAME,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return crossDeps;
+}
+
+/**
  * Convert a group of jobs to a single DAG
  */
 function convertGroupToDag(
   group: DividedGroup,
-  options: Omit<ConversionOptions, "divideStrategy">
+  options: Omit<ConversionOptions, "divideStrategy">,
+  crossDagMap?: CrossDagMap
 ): GeneratedDAG {
   const {
     airflowVersion,
@@ -123,8 +204,42 @@ function convertGroupToDag(
   // Convert jobs to tasks
   const tasks: AirflowTask[] = group.jobs.map((job) => convertJobToTask(job));
 
+  // Find and handle cross-DAG dependencies
+  const crossDeps = crossDagMap
+    ? findCrossDagDependencies(group.jobs, dagId, crossDagMap)
+    : [];
+
+  // Create ExternalTaskSensor tasks for cross-DAG dependencies
+  for (const crossDep of crossDeps) {
+    const sensorTaskId = `wait_for_${crossDep.sourceTaskId}`;
+    tasks.push({
+      taskId: sensorTaskId,
+      operatorType: "ExternalTaskSensor",
+      description: `Wait for ${crossDep.sourceTaskId} in ${crossDep.sourceDagId}`,
+      params: {
+        external_dag_id: crossDep.sourceDagId,
+        external_task_id: crossDep.sourceTaskId,
+      },
+    });
+  }
+
   // Build dependencies
   const dependencies = buildDependencies(group.jobs);
+
+  // Add dependencies from ExternalTaskSensor to waiting tasks
+  for (const crossDep of crossDeps) {
+    const sensorTaskId = `wait_for_${crossDep.sourceTaskId}`;
+    // Find jobs that depend on this condition
+    for (const job of group.jobs) {
+      if (job.INCOND?.some((c) => c.NAME === crossDep.conditionName)) {
+        const taskId = Rules.applyChain(job.JOBNAME, RULE_CHAINS.taskId);
+        dependencies.push({
+          upstream: sensorTaskId,
+          downstream: taskId,
+        });
+      }
+    }
+  }
 
   // Extract schedule from first job (if available)
   const schedule = extractSchedule(group.jobs[0]);
@@ -214,6 +329,49 @@ function convertJobToTask(job: ControlMJob): AirflowTask {
     operatorType = "SQLExecuteQueryOperator";
     params.sql = job.CMDLINE;
     params.conn_id = "default_conn";
+  } else if (jobType.includes("lambda") || jobType.includes("aws_lambda")) {
+    // AWS Lambda
+    operatorType = "LambdaInvokeFunctionOperator";
+    params.function_name = job.CMDLINE || job.FILENAME || "my-function";
+    params.aws_conn_id = "aws_default";
+  } else if (jobType.includes("s3") && !jobType.includes("sensor")) {
+    // AWS S3 Copy
+    operatorType = "S3CopyObjectOperator";
+    params.source_bucket_key = job.FILENAME;
+    params.dest_bucket_key = job.HOST || "destination/";
+    params.aws_conn_id = "aws_default";
+  } else if (jobType.includes("glue")) {
+    // AWS Glue
+    operatorType = "GlueJobOperator";
+    params.job_name = job.CMDLINE || job.FILENAME || "glue-job";
+    params.aws_conn_id = "aws_default";
+  } else if (jobType.includes("sap") || jobType.includes("hana")) {
+    // SAP HANA
+    operatorType = "SapHanaOperator";
+    params.sql = job.CMDLINE;
+    params.sap_hana_conn_id = "sap_hana_default";
+  } else if (jobType.includes("informatica")) {
+    // Informatica Cloud
+    operatorType = "InformaticaCloudRunTaskOperator";
+    params.task_name = job.CMDLINE || job.FILENAME || "informatica-task";
+    params.informatica_conn_id = "informatica_default";
+  } else if (jobType.includes("spark")) {
+    // Spark Submit
+    operatorType = "SparkSubmitOperator";
+    params.application = job.FILENAME || "spark-app.py";
+    params.conn_id = "spark_default";
+  } else if (jobType.includes("databricks")) {
+    // Databricks
+    operatorType = "DatabricksSubmitRunOperator";
+    params.notebook_path = job.FILENAME || "/Workspace/notebook";
+    params.databricks_conn_id = "databricks_default";
+  } else if (jobType.includes("sftp") || (jobType.includes("ftp") && !jobType.includes("http"))) {
+    // SFTP
+    operatorType = "SFTPOperator";
+    params.ssh_conn_id = "sftp_default";
+    params.local_filepath = job.FILENAME;
+    params.remote_filepath = job.HOST || "/remote/path";
+    params.operation = "put";
   } else {
     // Default to BashOperator
     operatorType = "BashOperator";
@@ -371,6 +529,43 @@ function generateDagCode(
   if (operatorTypes.has("SQLExecuteQueryOperator")) {
     lines.push("from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator");
   }
+  // AWS Operators
+  if (operatorTypes.has("LambdaInvokeFunctionOperator")) {
+    lines.push("from airflow.providers.amazon.aws.operators.lambda_function import LambdaInvokeFunctionOperator");
+  }
+  if (operatorTypes.has("S3CopyObjectOperator")) {
+    lines.push("from airflow.providers.amazon.aws.operators.s3 import S3CopyObjectOperator");
+  }
+  if (operatorTypes.has("GlueJobOperator")) {
+    lines.push("from airflow.providers.amazon.aws.operators.glue import GlueJobOperator");
+  }
+  // SAP Operators
+  if (operatorTypes.has("SapHanaOperator")) {
+    lines.push("from airflow.providers.sap.operators.sap_hana import SapHanaOperator");
+  }
+  // Informatica Operators
+  if (operatorTypes.has("InformaticaCloudRunTaskOperator")) {
+    lines.push("from airflow.providers.informatica.operators.informatica import InformaticaCloudRunTaskOperator");
+  }
+  // Spark/Databricks Operators
+  if (operatorTypes.has("SparkSubmitOperator")) {
+    lines.push("from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator");
+  }
+  if (operatorTypes.has("DatabricksSubmitRunOperator")) {
+    lines.push("from airflow.providers.databricks.operators.databricks import DatabricksSubmitRunOperator");
+  }
+  // SFTP Operators
+  if (operatorTypes.has("SFTPOperator")) {
+    lines.push("from airflow.providers.sftp.operators.sftp import SFTPOperator");
+  }
+  // External Task Sensor (for cross-DAG dependencies)
+  if (operatorTypes.has("ExternalTaskSensor")) {
+    if (isV3) {
+      lines.push("from airflow.providers.standard.sensors.external_task import ExternalTaskSensor");
+    } else {
+      lines.push("from airflow.sensors.external_task import ExternalTaskSensor");
+    }
+  }
 
   lines.push("");
 
@@ -481,6 +676,60 @@ function generateDagCode(
       case "SQLExecuteQueryOperator":
         lines.push(`${indent}    sql='''${task.params.sql || "SELECT 1"}''',`);
         lines.push(`${indent}    conn_id='${task.params.conn_id || "default_conn"}',`);
+        break;
+      // AWS Lambda
+      case "LambdaInvokeFunctionOperator":
+        lines.push(`${indent}    function_name='${task.params.function_name || "my-function"}',`);
+        lines.push(`${indent}    aws_conn_id='${task.params.aws_conn_id || "aws_default"}',`);
+        lines.push(`${indent}    invocation_type='RequestResponse',`);
+        break;
+      // AWS S3
+      case "S3CopyObjectOperator":
+        lines.push(`${indent}    source_bucket_key='${task.params.source_bucket_key || "source/file.txt"}',`);
+        lines.push(`${indent}    dest_bucket_key='${task.params.dest_bucket_key || "dest/file.txt"}',`);
+        lines.push(`${indent}    aws_conn_id='${task.params.aws_conn_id || "aws_default"}',`);
+        break;
+      // AWS Glue
+      case "GlueJobOperator":
+        lines.push(`${indent}    job_name='${task.params.job_name || "glue-job"}',`);
+        lines.push(`${indent}    aws_conn_id='${task.params.aws_conn_id || "aws_default"}',`);
+        lines.push(`${indent}    wait_for_completion=True,`);
+        break;
+      // SAP HANA
+      case "SapHanaOperator":
+        lines.push(`${indent}    sql='''${task.params.sql || "SELECT 1 FROM DUMMY"}''',`);
+        lines.push(`${indent}    sap_hana_conn_id='${task.params.sap_hana_conn_id || "sap_hana_default"}',`);
+        break;
+      // Informatica Cloud
+      case "InformaticaCloudRunTaskOperator":
+        lines.push(`${indent}    task_name='${task.params.task_name || "informatica-task"}',`);
+        lines.push(`${indent}    informatica_conn_id='${task.params.informatica_conn_id || "informatica_default"}',`);
+        lines.push(`${indent}    wait_for_completion=True,`);
+        break;
+      // Spark Submit
+      case "SparkSubmitOperator":
+        lines.push(`${indent}    application='${task.params.application || "spark-app.py"}',`);
+        lines.push(`${indent}    conn_id='${task.params.conn_id || "spark_default"}',`);
+        break;
+      // Databricks
+      case "DatabricksSubmitRunOperator":
+        lines.push(`${indent}    notebook_task={'notebook_path': '${task.params.notebook_path || "/Workspace/notebook"}'},`);
+        lines.push(`${indent}    databricks_conn_id='${task.params.databricks_conn_id || "databricks_default"}',`);
+        break;
+      // SFTP
+      case "SFTPOperator":
+        lines.push(`${indent}    ssh_conn_id='${task.params.ssh_conn_id || "sftp_default"}',`);
+        lines.push(`${indent}    local_filepath='${task.params.local_filepath || "/local/file.txt"}',`);
+        lines.push(`${indent}    remote_filepath='${task.params.remote_filepath || "/remote/file.txt"}',`);
+        lines.push(`${indent}    operation='${task.params.operation || "put"}',`);
+        break;
+      // ExternalTaskSensor (cross-DAG dependencies)
+      case "ExternalTaskSensor":
+        lines.push(`${indent}    external_dag_id='${task.params.external_dag_id}',`);
+        lines.push(`${indent}    external_task_id='${task.params.external_task_id}',`);
+        lines.push(`${indent}    allowed_states=['success'],`);
+        lines.push(`${indent}    mode='reschedule',`);
+        lines.push(`${indent}    timeout=3600,`);
         break;
     }
 

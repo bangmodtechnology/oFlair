@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useConverterStore } from "@/store/converter-store";
 import { FileUploader } from "@/components/converter/file-uploader";
 import { JobPreview } from "@/components/converter/job-preview";
@@ -43,10 +43,12 @@ import { parseControlM } from "@/lib/parser";
 import {
   convertControlMToAirflow,
   getDividerStrategies,
+  validateAllDAGs,
   type AirflowVersion,
   type DivideStrategy,
+  type ValidationResult,
 } from "@/lib/converter";
-import { addConversionToHistory } from "@/lib/storage/config-storage";
+import { addConversionToHistory, loadConfig, type AppConfig } from "@/lib/storage/config-storage";
 import { toast } from "sonner";
 
 const STEPS = [
@@ -70,6 +72,12 @@ export default function ConvertPage() {
     generatedDags,
     conversionReport,
     divideStrategy,
+    // Batch mode
+    batchFiles,
+    isBatchMode,
+    setBatchFileParsed,
+    setBatchFileError,
+    getAllJobs,
     setParsedDefinition,
     setGeneratedDags,
     setConversionReport,
@@ -83,22 +91,67 @@ export default function ConvertPage() {
   const [airflowVersion, setAirflowVersion] = useState<AirflowVersion>("3.1");
   const [useTaskFlowApi, setUseTaskFlowApi] = useState(false);
   const [showReportDialog, setShowReportDialog] = useState(false);
+  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+  const [validationResults, setValidationResults] = useState<Map<string, ValidationResult> | null>(null);
+
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    const config = loadConfig();
+    setAppConfig(config);
+  }, []);
 
   const dividerStrategies = getDividerStrategies();
   const currentStepIndex = STEPS.findIndex((s) => s.id === step);
   const isAirflow3 = airflowVersion.startsWith("3");
 
   const handleParse = async () => {
-    if (!inputContent || !inputType) return;
+    // Check for batch mode or single file mode
+    if (isBatchMode) {
+      if (batchFiles.length === 0) return;
+    } else {
+      if (!inputContent || !inputType) return;
+    }
 
     setIsProcessing(true);
     setError(null);
 
     try {
-      const result = await parseControlM(inputContent, inputType);
-      setParsedDefinition(result);
-      setStep("select");
-      toast.success(`Found ${result.jobs.length} jobs`);
+      if (isBatchMode) {
+        // Parse all batch files
+        let totalJobs = 0;
+        let parseErrors = 0;
+
+        for (let i = 0; i < batchFiles.length; i++) {
+          const batchFile = batchFiles[i];
+          try {
+            const result = await parseControlM(batchFile.content, batchFile.type);
+            setBatchFileParsed(i, result);
+            totalJobs += result.jobs.length;
+          } catch (err) {
+            const message = err instanceof Error ? err.message : "Parse error";
+            setBatchFileError(i, message);
+            parseErrors++;
+          }
+        }
+
+        if (parseErrors === batchFiles.length) {
+          throw new Error("All files failed to parse");
+        }
+
+        setStep("select");
+        toast.success(
+          `Parsed ${batchFiles.length - parseErrors} file(s) with ${totalJobs} jobs total`
+        );
+        if (parseErrors > 0) {
+          toast.warning(`${parseErrors} file(s) had parse errors`);
+        }
+      } else {
+        // Single file mode
+        const result = await parseControlM(inputContent, inputType!);
+        setParsedDefinition(result);
+        setStep("select");
+        toast.success(`Found ${result.jobs.length} jobs`);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to parse file";
       setError(message);
@@ -109,13 +162,15 @@ export default function ConvertPage() {
   };
 
   const handleConvert = async () => {
-    if (!parsedDefinition || selectedJobs.length === 0) return;
+    // Get all jobs from single file or batch files
+    const allJobs = getAllJobs();
+    if (allJobs.length === 0 || selectedJobs.length === 0) return;
 
     setIsProcessing(true);
     setError(null);
 
     try {
-      const jobsToConvert = parsedDefinition.jobs.filter((job) =>
+      const jobsToConvert = allJobs.filter((job) =>
         selectedJobs.includes(job.JOBNAME)
       );
 
@@ -123,16 +178,46 @@ export default function ConvertPage() {
         airflowVersion,
         useTaskFlowApi,
         divideStrategy: { strategy: divideStrategy },
-        includeComments: true,
+        // Use settings from localStorage
+        defaultOwner: appConfig?.defaultOwner,
+        defaultRetries: appConfig?.defaultRetries,
+        defaultRetryDelay: appConfig?.defaultRetryDelay,
+        dagIdPrefix: appConfig?.dagIdPrefix,
+        dagIdSuffix: appConfig?.dagIdSuffix,
+        includeComments: appConfig?.includeComments ?? true,
       });
 
       setGeneratedDags(result.dags);
       setConversionReport(result.report);
+
+      // Validate generated DAGs
+      const validations = validateAllDAGs(result.dags);
+      setValidationResults(validations);
+
+      // Check validation results
+      let hasErrors = false;
+      let totalWarnings = 0;
+      validations.forEach((v) => {
+        if (!v.valid) hasErrors = true;
+        totalWarnings += v.warnings.length;
+      });
+
+      if (hasErrors) {
+        toast.warning("DAGs generated with validation errors - check report");
+      } else if (totalWarnings > 0) {
+        toast.info(`${totalWarnings} validation warning(s) - check report`);
+      }
+
       setStep("result");
 
+      // Determine source file name for history
+      const sourceFileName = isBatchMode
+        ? `${batchFiles.length} files (${batchFiles.map((f) => f.file.name).join(", ")})`
+        : inputFile?.name || "unknown.xml";
+
       addConversionToHistory({
-        sourceFile: inputFile?.name || "unknown.xml",
-        sourceType: inputType || "xml",
+        sourceFile: sourceFileName,
+        sourceType: isBatchMode ? "batch" : inputType || "xml",
         jobsConverted: result.dags.flatMap((dag) =>
           dag.dag.tasks.map((task) => ({
             jobName: task.taskId,
@@ -155,9 +240,13 @@ export default function ConvertPage() {
       const message = err instanceof Error ? err.message : "Failed to generate DAGs";
       setError(message);
 
+      const sourceFileName = isBatchMode
+        ? `${batchFiles.length} files`
+        : inputFile?.name || "unknown.xml";
+
       addConversionToHistory({
-        sourceFile: inputFile?.name || "unknown.xml",
-        sourceType: inputType || "xml",
+        sourceFile: sourceFileName,
+        sourceType: isBatchMode ? "batch" : inputType || "xml",
         jobsConverted: [],
         airflowVersion,
         status: "failed",
@@ -172,6 +261,10 @@ export default function ConvertPage() {
   const canProceed = () => {
     switch (step) {
       case "upload":
+        // Check batch mode or single file mode
+        if (isBatchMode) {
+          return batchFiles.length > 0;
+        }
         return !!inputContent && !!inputType;
       case "select":
         return selectedJobs.length > 0;
@@ -301,13 +394,28 @@ export default function ConvertPage() {
           {step === "upload" && (
             <div className="space-y-4">
               <FileUploader />
-              {inputFile && (
+              {/* Show summary for non-batch mode single file */}
+              {!isBatchMode && inputFile && (
                 <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
                   <FileCode className="h-5 w-5 text-primary" />
                   <div>
                     <p className="font-medium">{inputFile.name}</p>
                     <p className="text-xs text-muted-foreground">
                       {(inputFile.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                </div>
+              )}
+              {/* Show summary for batch mode */}
+              {isBatchMode && batchFiles.length > 0 && (
+                <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                  <FileCode className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="font-medium">
+                      {batchFiles.length} file(s) ready to parse
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Total: {(batchFiles.reduce((sum, f) => sum + f.file.size, 0) / 1024).toFixed(1)} KB
                     </p>
                   </div>
                 </div>
@@ -416,8 +524,18 @@ export default function ConvertPage() {
             <div className="space-y-6">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="p-4 border rounded-lg">
-                  <p className="text-sm text-muted-foreground">Source File</p>
-                  <p className="font-medium">{inputFile?.name || "N/A"}</p>
+                  <p className="text-sm text-muted-foreground">Source</p>
+                  {isBatchMode ? (
+                    <div>
+                      <p className="font-medium">{batchFiles.length} files (Batch)</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {batchFiles.map((f) => f.file.name).slice(0, 3).join(", ")}
+                        {batchFiles.length > 3 && ` +${batchFiles.length - 3} more`}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="font-medium">{inputFile?.name || "N/A"}</p>
+                  )}
                 </div>
                 <div className="p-4 border rounded-lg">
                   <p className="text-sm text-muted-foreground">Jobs Selected</p>
@@ -432,6 +550,38 @@ export default function ConvertPage() {
                   <p className="font-medium capitalize">{divideStrategy}</p>
                 </div>
               </div>
+
+              {/* Settings from localStorage */}
+              {appConfig && (
+                <div className="p-4 border rounded-lg bg-muted/30">
+                  <p className="text-sm font-medium mb-2 flex items-center gap-2">
+                    <Settings2 className="h-4 w-4" />
+                    Settings from Configuration
+                  </p>
+                  <div className="grid gap-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Owner:</span>
+                      <span className="font-mono">{appConfig.defaultOwner}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Retries:</span>
+                      <span className="font-mono">{appConfig.defaultRetries}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Retry Delay:</span>
+                      <span className="font-mono">{appConfig.defaultRetryDelay} min</span>
+                    </div>
+                    {(appConfig.dagIdPrefix || appConfig.dagIdSuffix) && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">DAG ID Format:</span>
+                        <span className="font-mono">
+                          {appConfig.dagIdPrefix}name{appConfig.dagIdSuffix}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {isAirflow3 && useTaskFlowApi && (
                 <div className="p-4 border rounded-lg bg-muted/50">
@@ -452,7 +602,10 @@ export default function ConvertPage() {
           {/* Step 5: Result */}
           {step === "result" && (
             <div className="space-y-4">
-              <OutputViewer onShowReport={() => setShowReportDialog(true)} />
+              <OutputViewer
+                onShowReport={() => setShowReportDialog(true)}
+                validationResults={validationResults}
+              />
             </div>
           )}
         </CardContent>
