@@ -281,16 +281,17 @@ function buildDependencies(jobs: ControlMJob[]): AirflowDependency[] {
  * Extract schedule from Control-M job
  */
 function extractSchedule(job: ControlMJob) {
+  const jobRecord = job as Record<string, unknown>;
   const schedule: ControlMSchedule = {
     DAYS: job.DAYS,
     DAYSCAL: job.DAYSCAL,
-    MONTHS: job.MONTHS,
+    MONTHS: jobRecord.MONTHS as string | undefined,
     TIMEFROM: job.TIMEFROM,
-    TIMETO: job.TIMETO,
-    TIME: (job as Record<string, unknown>).TIME as string | undefined,
-    INTERVAL: (job as Record<string, unknown>).INTERVAL as string | undefined,
+    TIMETO: jobRecord.TIMETO as string | undefined,
+    TIME: jobRecord.TIME as string | undefined,
+    INTERVAL: jobRecord.INTERVAL as string | undefined,
     CONFCAL: job.CONFCAL,
-    WEEKS: (job as Record<string, unknown>).WEEKS as string | undefined,
+    WEEKS: jobRecord.WEEKS as string | undefined,
   };
 
   return convertSchedule(schedule);

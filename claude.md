@@ -417,12 +417,12 @@ npm install -D @types/node
 
 ## 🎯 Success Criteria
 
-- [ ] สามารถ upload Control-M XML/JSON และแปลงเป็น Airflow DAG ได้
-- [ ] UI ใช้งานง่าย ไม่ต้องอ่าน documentation มาก
-- [ ] สามารถสร้าง/แก้ไข/บันทึก templates ได้
-- [ ] แสดง dependency graph ได้อย่างถูกต้อง
-- [ ] Export เป็น .py files พร้อมใช้งานได้เลย
-- [ ] โค้ดมี structure ชัดเจน พัฒนาต่อได้ง่าย
+- [x] สามารถ upload Control-M XML/JSON และแปลงเป็น Airflow DAG ได้
+- [x] UI ใช้งานง่าย ไม่ต้องอ่าน documentation มาก
+- [x] สามารถสร้าง/แก้ไข/บันทึก templates ได้
+- [x] แสดง dependency graph ได้อย่างถูกต้อง
+- [x] Export เป็น .py files พร้อมใช้งานได้เลย
+- [x] โค้ดมี structure ชัดเจน พัฒนาต่อได้ง่าย
 
 ---
 
@@ -460,6 +460,12 @@ npm install -D @types/node
   - Conversion Report พร้อม warnings และ statistics (`src/lib/converter/report.ts`)
   - Bulk Export เป็น ZIP พร้อม README.md และ requirements.txt (`src/lib/converter/export.ts`)
   - รองรับ Airflow 2.5 - 3.1 พร้อม TaskFlow API
+- [x] **Dependency Graph Visualization** (React Flow):
+  - Interactive DAG visualization แสดง tasks และ dependencies
+  - Color-coded nodes ตาม operator type
+  - Auto-layout ตาม dependency hierarchy
+  - MiniMap และ Controls สำหรับ navigation
+  - Toggle ระหว่าง Code view และ Graph view
 
 ---
 
@@ -611,3 +617,47 @@ const result = await convertControlMToAirflow(jobs, {
 // result.dags - Generated DAGs
 // result.report - Conversion report with warnings
 ```
+
+---
+
+## 📊 Dependency Graph Visualization
+
+### Overview
+ใช้ React Flow (@xyflow/react) สำหรับแสดง DAG visualization แบบ interactive
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Auto Layout** | จัดเรียง nodes อัตโนมัติตาม dependency hierarchy |
+| **Color-coded Nodes** | แต่ละ operator type มีสีเฉพาะ |
+| **Interactive** | Drag, zoom, pan ได้ |
+| **MiniMap** | แสดง overview ของ DAG ทั้งหมด |
+| **Info Panel** | แสดงสถิติ tasks และ dependencies |
+
+### Operator Colors
+
+| Operator | Color |
+|----------|-------|
+| BashOperator | Orange |
+| PythonOperator | Blue |
+| EmptyOperator | Gray |
+| FileSensor | Purple |
+| SQLExecuteQueryOperator | Green |
+| KubernetesPodOperator | Blue |
+| SSHOperator | Slate |
+| EmailOperator | Red |
+
+### Component Usage
+
+```tsx
+import { DependencyGraph } from '@/components/converter/dependency-graph';
+
+<DependencyGraph dag={generatedDag.dag} />
+```
+
+### Toggle View
+
+ใน OutputViewer สามารถสลับระหว่าง:
+- **Code View** - แสดง Python code ด้วย Monaco Editor
+- **Graph View** - แสดง Dependency Graph ด้วย React Flow

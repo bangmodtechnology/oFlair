@@ -90,6 +90,7 @@ export default function TemplatesPage() {
       mappings: template.mappings.map((m) => ({ ...m, id: `m-${Date.now()}-${Math.random()}` })),
       outputTemplate: template.outputTemplate,
       isActive: true,
+      isDefault: false,
       priority: template.priority,
     });
     setTemplates([...templates, newTemplate]);
@@ -112,6 +113,7 @@ export default function TemplatesPage() {
           mappings: template.mappings,
           outputTemplate: template.outputTemplate,
           isActive: template.isActive,
+          isDefault: false,
           priority: template.priority,
         });
         setTemplates([...templates, newTemplate]);
@@ -126,6 +128,7 @@ export default function TemplatesPage() {
         mappings: template.mappings,
         outputTemplate: template.outputTemplate,
         isActive: true,
+        isDefault: false,
         priority: 50,
       });
       setTemplates([...templates, newTemplate]);

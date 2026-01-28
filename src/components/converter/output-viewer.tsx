@@ -21,11 +21,14 @@ import {
   FileText,
   ChevronDown,
   BarChart3,
+  GitBranch,
+  Code2,
 } from "lucide-react";
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import { downloadDag, downloadAllAsZip, copyToClipboard } from "@/lib/converter/export";
 import { toast } from "sonner";
+import { DependencyGraph } from "./dependency-graph";
 
 const MonacoEditor = dynamic(
   () => import("@monaco-editor/react").then((mod) => mod.default),
@@ -33,15 +36,15 @@ const MonacoEditor = dynamic(
 );
 
 interface OutputViewerProps {
-  showReportTab?: boolean;
   onShowReport?: () => void;
 }
 
-export function OutputViewer({ showReportTab = false, onShowReport }: OutputViewerProps) {
+export function OutputViewer({ onShowReport }: OutputViewerProps) {
   const { generatedDags, conversionReport } = useConverterStore();
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("dags");
+  const [viewMode, setViewMode] = useState<"code" | "graph">("code");
 
   if (generatedDags.length === 0) {
     return (
@@ -203,41 +206,69 @@ export function OutputViewer({ showReportTab = false, onShowReport }: OutputView
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleCopy(dag.content, index)}
-                    >
-                      {copiedIndex === index ? (
-                        <Check className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDownloadSingle(dag)}
-                    >
-                      <Download className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center border rounded-md overflow-hidden">
+                      <Button
+                        variant={viewMode === "code" ? "secondary" : "ghost"}
+                        size="sm"
+                        className="rounded-none h-7 px-2"
+                        onClick={() => setViewMode("code")}
+                      >
+                        <Code2 className="h-4 w-4 mr-1" />
+                        Code
+                      </Button>
+                      <Button
+                        variant={viewMode === "graph" ? "secondary" : "ghost"}
+                        size="sm"
+                        className="rounded-none h-7 px-2"
+                        onClick={() => setViewMode("graph")}
+                      >
+                        <GitBranch className="h-4 w-4 mr-1" />
+                        Graph
+                      </Button>
+                    </div>
+                    {viewMode === "code" && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCopy(dag.content, index)}
+                        >
+                          {copiedIndex === index ? (
+                            <Check className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDownloadSingle(dag)}
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="flex-1">
-                  <MonacoEditor
-                    height="100%"
-                    language="python"
-                    value={dag.content}
-                    options={{
-                      readOnly: true,
-                      minimap: { enabled: false },
-                      fontSize: 13,
-                      lineNumbers: "on",
-                      scrollBeyondLastLine: false,
-                      wordWrap: "on",
-                    }}
-                    theme="vs-dark"
-                  />
+                  {viewMode === "code" ? (
+                    <MonacoEditor
+                      height="100%"
+                      language="python"
+                      value={dag.content}
+                      options={{
+                        readOnly: true,
+                        minimap: { enabled: false },
+                        fontSize: 13,
+                        lineNumbers: "on",
+                        scrollBeyondLastLine: false,
+                        wordWrap: "on",
+                      }}
+                      theme="vs-dark"
+                    />
+                  ) : (
+                    <DependencyGraph dag={dag.dag} />
+                  )}
                 </div>
               </div>
             </TabsContent>
