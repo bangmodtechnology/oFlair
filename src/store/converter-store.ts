@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { ControlMDefinition, ControlMJob } from '@/types/controlm';
 import type { GeneratedDAG } from '@/types/airflow';
+import type { ConversionReport } from '@/lib/converter/report';
+import type { DivideStrategy } from '@/lib/converter/dag-divider';
 
 interface ConversionState {
   // Input state
@@ -14,6 +16,10 @@ interface ConversionState {
 
   // Output state
   generatedDags: GeneratedDAG[];
+  conversionReport: ConversionReport | null;
+
+  // Conversion options
+  divideStrategy: DivideStrategy;
 
   // UI state
   isProcessing: boolean;
@@ -30,6 +36,8 @@ interface ConversionState {
   selectAllJobs: () => void;
   deselectAllJobs: () => void;
   setGeneratedDags: (dags: GeneratedDAG[]) => void;
+  setConversionReport: (report: ConversionReport | null) => void;
+  setDivideStrategy: (strategy: DivideStrategy) => void;
   setIsProcessing: (isProcessing: boolean) => void;
   setError: (error: string | null) => void;
   setStep: (step: 'upload' | 'preview' | 'convert' | 'result') => void;
@@ -43,6 +51,8 @@ const initialState = {
   parsedDefinition: null,
   selectedJobs: [] as string[],
   generatedDags: [] as GeneratedDAG[],
+  conversionReport: null as ConversionReport | null,
+  divideStrategy: 'folder' as DivideStrategy,
   isProcessing: false,
   error: null as string | null,
   step: 'upload' as const,
@@ -85,6 +95,10 @@ export const useConverterStore = create<ConversionState>((set, get) => ({
   deselectAllJobs: () => set({ selectedJobs: [] }),
 
   setGeneratedDags: (dags) => set({ generatedDags: dags }),
+
+  setConversionReport: (report) => set({ conversionReport: report }),
+
+  setDivideStrategy: (strategy) => set({ divideStrategy: strategy }),
 
   setIsProcessing: (isProcessing) => set({ isProcessing }),
 

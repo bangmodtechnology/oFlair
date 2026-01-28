@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus,
   FileCode,
@@ -36,106 +37,111 @@ import {
   Copy,
   Check,
   Star,
+  Upload,
+  FileUp,
 } from "lucide-react";
 import dynamic from "next/dynamic";
-import type { ConversionTemplate } from "@/types/template";
+import type { ConversionTemplate, TemplateCondition, MappingRule } from "@/types/template";
 import { DEFAULT_TEMPLATE_OUTPUT, CONTROLM_FIELDS, AIRFLOW_FIELDS } from "@/types/template";
+import {
+  loadAllTemplates,
+  addCustomTemplate,
+  updateTemplate,
+  deleteTemplate,
+  saveCustomTemplates,
+  loadCustomTemplates,
+  getBuiltinTemplates,
+} from "@/lib/templates/template-loader";
+import { toast } from "sonner";
 
 const MonacoEditor = dynamic(
   () => import("@monaco-editor/react").then((mod) => mod.default),
-  { ssr: false, loading: () => <div className="h-[400px] bg-muted animate-pulse" /> }
+  { ssr: false, loading: () => <div className="h-[300px] bg-muted animate-pulse" /> }
 );
 
-// Mock templates for demo
-const defaultTemplates: ConversionTemplate[] = [
-  {
-    id: "1",
-    name: "Default - Command to Bash",
-    description: "Converts Control-M Command jobs to Airflow BashOperator",
-    conditions: [
-      { id: "c1", field: "JOB_TYPE", operator: "equals", value: "Command" },
-    ],
-    mappings: [
-      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
-      { id: "m2", source: "CMDLINE", target: "bash_command" },
-    ],
-    outputTemplate: DEFAULT_TEMPLATE_OUTPUT,
-    isDefault: true,
-    isActive: true,
-    priority: 100,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-  {
-    id: "2",
-    name: "File Watcher to Sensor",
-    description: "Converts Control-M FileWatcher jobs to Airflow FileSensor",
-    conditions: [
-      { id: "c1", field: "JOB_TYPE", operator: "equals", value: "FileWatcher" },
-    ],
-    mappings: [
-      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
-      { id: "m2", source: "FILENAME", target: "filepath" },
-    ],
-    outputTemplate: `{{task_id}} = FileSensor(
-    task_id='{{task_id}}',
-    filepath='{{filepath}}',
-    poke_interval=60,
-    timeout=3600,
-    mode='poke',
-    dag=dag
-)`,
-    isDefault: true,
-    isActive: true,
-    priority: 90,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-  {
-    id: "3",
-    name: "Script to Python",
-    description: "Converts Control-M Script jobs to Airflow PythonOperator",
-    conditions: [
-      { id: "c1", field: "JOB_TYPE", operator: "equals", value: "Script" },
-      { id: "c2", field: "FILENAME", operator: "ends_with", value: ".py" },
-    ],
-    mappings: [
-      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
-      { id: "m2", source: "FILENAME", target: "python_callable" },
-    ],
-    outputTemplate: `{{task_id}} = PythonOperator(
-    task_id='{{task_id}}',
-    python_callable={{python_callable}},
-    dag=dag
-)`,
-    isDefault: true,
-    isActive: true,
-    priority: 80,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-];
-
 export default function TemplatesPage() {
-  const [templates, setTemplates] = useState<ConversionTemplate[]>(defaultTemplates);
+  const [templates, setTemplates] = useState<ConversionTemplate[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<ConversionTemplate | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load templates on mount
+  useEffect(() => {
+    const loaded = loadAllTemplates();
+    setTemplates(loaded);
+    setIsLoading(false);
+  }, []);
 
   const handleDelete = (id: string) => {
-    setTemplates(templates.filter((t) => t.id !== id));
+    const success = deleteTemplate(id);
+    if (success) {
+      setTemplates(templates.filter((t) => t.id !== id));
+      toast.success("Template deleted");
+    } else {
+      toast.error("Cannot delete built-in templates");
+    }
   };
 
   const handleDuplicate = (template: ConversionTemplate) => {
-    const newTemplate: ConversionTemplate = {
-      ...template,
-      id: Date.now().toString(),
+    const newTemplate = addCustomTemplate({
       name: `${template.name} (Copy)`,
-      isDefault: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+      description: template.description,
+      conditions: template.conditions.map((c) => ({ ...c, id: `c-${Date.now()}-${Math.random()}` })),
+      mappings: template.mappings.map((m) => ({ ...m, id: `m-${Date.now()}-${Math.random()}` })),
+      outputTemplate: template.outputTemplate,
+      isActive: true,
+      priority: template.priority,
+    });
     setTemplates([...templates, newTemplate]);
+    toast.success("Template duplicated");
   };
+
+  const handleSave = (template: ConversionTemplate) => {
+    if (editingTemplate) {
+      // Update existing
+      const updated = updateTemplate(editingTemplate.id, template);
+      if (updated) {
+        setTemplates(templates.map((t) => (t.id === editingTemplate.id ? updated : t)));
+        toast.success("Template updated");
+      } else {
+        // If updating a builtin, a new custom copy is created
+        const newTemplate = addCustomTemplate({
+          name: template.name,
+          description: template.description,
+          conditions: template.conditions,
+          mappings: template.mappings,
+          outputTemplate: template.outputTemplate,
+          isActive: template.isActive,
+          priority: template.priority,
+        });
+        setTemplates([...templates, newTemplate]);
+        toast.success("Created custom copy of built-in template");
+      }
+    } else {
+      // Add new
+      const newTemplate = addCustomTemplate({
+        name: template.name,
+        description: template.description,
+        conditions: template.conditions,
+        mappings: template.mappings,
+        outputTemplate: template.outputTemplate,
+        isActive: true,
+        priority: 50,
+      });
+      setTemplates([...templates, newTemplate]);
+      toast.success("Template created");
+    }
+    setIsDialogOpen(false);
+    setEditingTemplate(null);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">Loading templates...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -149,7 +155,7 @@ export default function TemplatesPage() {
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button onClick={() => setEditingTemplate(null)}>
               <Plus className="h-4 w-4 mr-2" />
               New Template
             </Button>
@@ -165,17 +171,7 @@ export default function TemplatesPage() {
             </DialogHeader>
             <TemplateEditor
               template={editingTemplate}
-              onSave={(template) => {
-                if (editingTemplate) {
-                  setTemplates(
-                    templates.map((t) => (t.id === template.id ? template : t))
-                  );
-                } else {
-                  setTemplates([...templates, template]);
-                }
-                setIsDialogOpen(false);
-                setEditingTemplate(null);
-              }}
+              onSave={handleSave}
               onCancel={() => {
                 setIsDialogOpen(false);
                 setEditingTemplate(null);
@@ -193,7 +189,7 @@ export default function TemplatesPage() {
               <div className="absolute top-3 right-3">
                 <Badge variant="secondary" className="gap-1">
                   <Star className="h-3 w-3" />
-                  Default
+                  Built-in
                 </Badge>
               </div>
             )}
@@ -299,16 +295,168 @@ function TemplateEditor({
   const [outputTemplate, setOutputTemplate] = useState(
     template?.outputTemplate || DEFAULT_TEMPLATE_OUTPUT
   );
+  const [conditions, setConditions] = useState<TemplateCondition[]>(
+    template?.conditions || []
+  );
+  const [mappings, setMappings] = useState<MappingRule[]>(
+    template?.mappings || []
+  );
+  const [xmlInput, setXmlInput] = useState("");
+  const [activeTab, setActiveTab] = useState("manual");
+
+  // Add condition
+  const addCondition = () => {
+    const newCondition: TemplateCondition = {
+      id: `c-${Date.now()}`,
+      field: "JOB_TYPE",
+      operator: "equals",
+      value: "",
+    };
+    setConditions([...conditions, newCondition]);
+  };
+
+  // Update condition
+  const updateCondition = (id: string, updates: Partial<TemplateCondition>) => {
+    setConditions(
+      conditions.map((c) => (c.id === id ? { ...c, ...updates } : c))
+    );
+  };
+
+  // Remove condition
+  const removeCondition = (id: string) => {
+    setConditions(conditions.filter((c) => c.id !== id));
+  };
+
+  // Add mapping
+  const addMapping = () => {
+    const newMapping: MappingRule = {
+      id: `m-${Date.now()}`,
+      source: "JOBNAME",
+      target: "task_id",
+    };
+    setMappings([...mappings, newMapping]);
+  };
+
+  // Update mapping
+  const updateMapping = (id: string, updates: Partial<MappingRule>) => {
+    setMappings(
+      mappings.map((m) => (m.id === id ? { ...m, ...updates } : m))
+    );
+  };
+
+  // Remove mapping
+  const removeMapping = (id: string) => {
+    setMappings(mappings.filter((m) => m.id !== id));
+  };
+
+  // Parse XML and extract fields
+  const parseXmlFields = () => {
+    if (!xmlInput.trim()) {
+      toast.error("Please paste XML content first");
+      return;
+    }
+
+    try {
+      // Extract all XML tags and their values
+      const tagRegex = /<(\w+)[^>]*>([^<]*)<\/\1>/g;
+      const attrRegex = /(\w+)="([^"]*)"/g;
+      const extractedFields = new Map<string, string>();
+
+      // Extract tag contents
+      let match;
+      while ((match = tagRegex.exec(xmlInput)) !== null) {
+        const [, tagName, value] = match;
+        if (value.trim()) {
+          extractedFields.set(tagName.toUpperCase(), value.trim());
+        }
+      }
+
+      // Extract attributes
+      while ((match = attrRegex.exec(xmlInput)) !== null) {
+        const [, attrName, value] = match;
+        if (value.trim()) {
+          extractedFields.set(attrName.toUpperCase(), value.trim());
+        }
+      }
+
+      if (extractedFields.size === 0) {
+        toast.error("No fields found in XML");
+        return;
+      }
+
+      // Auto-create mappings from extracted fields
+      const newMappings: MappingRule[] = [];
+      const newConditions: TemplateCondition[] = [];
+
+      extractedFields.forEach((value, field) => {
+        // Check if this is a known Control-M field
+        if (CONTROLM_FIELDS.includes(field as typeof CONTROLM_FIELDS[number])) {
+          // Find matching Airflow field
+          const airflowField = getMatchingAirflowField(field);
+          if (airflowField) {
+            newMappings.push({
+              id: `m-${Date.now()}-${field}`,
+              source: field,
+              target: airflowField,
+              transform: field === "JOBNAME" ? "lowercase" : undefined,
+            });
+          }
+
+          // Create condition for JOB_TYPE
+          if (field === "JOB_TYPE") {
+            newConditions.push({
+              id: `c-${Date.now()}-${field}`,
+              field: field,
+              operator: "equals",
+              value: value,
+            });
+          }
+        }
+      });
+
+      if (newMappings.length > 0) {
+        setMappings((prev) => [...prev, ...newMappings]);
+      }
+      if (newConditions.length > 0) {
+        setConditions((prev) => [...prev, ...newConditions]);
+      }
+
+      toast.success(`Extracted ${extractedFields.size} fields from XML`);
+      setActiveTab("manual");
+    } catch (error) {
+      toast.error("Failed to parse XML");
+      console.error(error);
+    }
+  };
+
+  // Helper to match Control-M field to Airflow field
+  const getMatchingAirflowField = (controlmField: string): string | null => {
+    const mapping: Record<string, string> = {
+      JOBNAME: "task_id",
+      CMDLINE: "bash_command",
+      FILENAME: "filepath",
+      DESCRIPTION: "doc",
+      RUN_AS: "run_as_user",
+      HOST: "host",
+      PRIORITY: "priority_weight",
+    };
+    return mapping[controlmField] || null;
+  };
 
   const handleSave = () => {
+    if (!name.trim()) {
+      toast.error("Template name is required");
+      return;
+    }
+
     const newTemplate: ConversionTemplate = {
-      id: template?.id || Date.now().toString(),
+      id: template?.id || `custom-${Date.now()}`,
       name,
       description,
-      conditions: template?.conditions || [],
-      mappings: template?.mappings || [],
+      conditions,
+      mappings,
       outputTemplate,
-      isDefault: template?.isDefault || false,
+      isDefault: false,
       isActive: true,
       priority: template?.priority || 50,
       createdAt: template?.createdAt || new Date(),
@@ -322,7 +470,7 @@ function TemplateEditor({
       {/* Basic Info */}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="name">Template Name</Label>
+          <Label htmlFor="name">Template Name *</Label>
           <Input
             id="name"
             value={name}
@@ -341,109 +489,196 @@ function TemplateEditor({
         </div>
       </div>
 
-      {/* Conditions */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <Label>Matching Conditions</Label>
-          <Button variant="outline" size="sm">
-            <Plus className="h-4 w-4 mr-1" />
-            Add Condition
-          </Button>
-        </div>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="grid gap-3">
-              <div className="flex items-center gap-2">
-                <Select defaultValue="JOB_TYPE">
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CONTROLM_FIELDS.map((field) => (
-                      <SelectItem key={field} value={field}>
-                        {field}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select defaultValue="equals">
-                  <SelectTrigger className="w-[120px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="equals">equals</SelectItem>
-                    <SelectItem value="contains">contains</SelectItem>
-                    <SelectItem value="starts_with">starts with</SelectItem>
-                    <SelectItem value="ends_with">ends with</SelectItem>
-                    <SelectItem value="regex">matches regex</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input placeholder="Value" className="flex-1" />
-                <Button variant="ghost" size="icon">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Tabs for Manual or XML Import */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="manual">Manual Entry</TabsTrigger>
+          <TabsTrigger value="xml">Import from XML</TabsTrigger>
+        </TabsList>
 
-      {/* Mappings */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <Label>Field Mappings</Label>
-          <Button variant="outline" size="sm">
-            <Plus className="h-4 w-4 mr-1" />
-            Add Mapping
+        <TabsContent value="xml" className="space-y-4">
+          <div className="space-y-2">
+            <Label>Paste Control-M XML</Label>
+            <Textarea
+              value={xmlInput}
+              onChange={(e) => setXmlInput(e.target.value)}
+              placeholder={`<JOB JOBNAME="MY_JOB" JOB_TYPE="Command">
+  <CMDLINE>echo "Hello"</CMDLINE>
+  <FILENAME>/path/to/file</FILENAME>
+</JOB>`}
+              className="font-mono text-sm h-48"
+            />
+          </div>
+          <Button onClick={parseXmlFields}>
+            <FileUp className="h-4 w-4 mr-2" />
+            Extract Fields from XML
           </Button>
-        </div>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="grid gap-3">
-              <div className="flex items-center gap-2">
-                <Select defaultValue="JOBNAME">
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CONTROLM_FIELDS.map((field) => (
-                      <SelectItem key={field} value={field}>
-                        {field}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <span className="text-muted-foreground">→</span>
-                <Select defaultValue="task_id">
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {AIRFLOW_FIELDS.map((field) => (
-                      <SelectItem key={field} value={field}>
-                        {field}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select defaultValue="none">
-                  <SelectTrigger className="w-[120px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No transform</SelectItem>
-                    <SelectItem value="lowercase">lowercase</SelectItem>
-                    <SelectItem value="uppercase">UPPERCASE</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button variant="ghost" size="icon">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
+        </TabsContent>
+
+        <TabsContent value="manual" className="space-y-6">
+          {/* Conditions */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label>Matching Conditions</Label>
+              <Button variant="outline" size="sm" onClick={addCondition}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add Condition
+              </Button>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+            <Card>
+              <CardContent className="pt-4">
+                {conditions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No conditions defined. Click "Add Condition" to start.
+                  </p>
+                ) : (
+                  <div className="grid gap-3">
+                    {conditions.map((condition) => (
+                      <div key={condition.id} className="flex items-center gap-2">
+                        <Select
+                          value={condition.field}
+                          onValueChange={(value) =>
+                            updateCondition(condition.id, { field: value })
+                          }
+                        >
+                          <SelectTrigger className="w-[140px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {CONTROLM_FIELDS.map((field) => (
+                              <SelectItem key={field} value={field}>
+                                {field}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={condition.operator}
+                          onValueChange={(value: TemplateCondition["operator"]) =>
+                            updateCondition(condition.id, { operator: value })
+                          }
+                        >
+                          <SelectTrigger className="w-[120px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="equals">equals</SelectItem>
+                            <SelectItem value="contains">contains</SelectItem>
+                            <SelectItem value="starts_with">starts with</SelectItem>
+                            <SelectItem value="ends_with">ends with</SelectItem>
+                            <SelectItem value="regex">matches regex</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          value={condition.value}
+                          onChange={(e) =>
+                            updateCondition(condition.id, { value: e.target.value })
+                          }
+                          placeholder="Value"
+                          className="flex-1"
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeCondition(condition.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Mappings */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label>Field Mappings</Label>
+              <Button variant="outline" size="sm" onClick={addMapping}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add Mapping
+              </Button>
+            </div>
+            <Card>
+              <CardContent className="pt-4">
+                {mappings.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No mappings defined. Click "Add Mapping" to start.
+                  </p>
+                ) : (
+                  <div className="grid gap-3">
+                    {mappings.map((mapping) => (
+                      <div key={mapping.id} className="flex items-center gap-2">
+                        <Select
+                          value={mapping.source}
+                          onValueChange={(value) =>
+                            updateMapping(mapping.id, { source: value })
+                          }
+                        >
+                          <SelectTrigger className="w-[140px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {CONTROLM_FIELDS.map((field) => (
+                              <SelectItem key={field} value={field}>
+                                {field}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <span className="text-muted-foreground">→</span>
+                        <Select
+                          value={mapping.target}
+                          onValueChange={(value) =>
+                            updateMapping(mapping.id, { target: value })
+                          }
+                        >
+                          <SelectTrigger className="w-[140px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {AIRFLOW_FIELDS.map((field) => (
+                              <SelectItem key={field} value={field}>
+                                {field}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={mapping.transform || "none"}
+                          onValueChange={(value) =>
+                            updateMapping(mapping.id, {
+                              transform: value === "none" ? undefined : (value as MappingRule["transform"]),
+                            })
+                          }
+                        >
+                          <SelectTrigger className="w-[120px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No transform</SelectItem>
+                            <SelectItem value="lowercase">lowercase</SelectItem>
+                            <SelectItem value="uppercase">UPPERCASE</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeMapping(mapping.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
 
       {/* Output Template */}
       <div className="space-y-3">
@@ -455,7 +690,7 @@ function TemplateEditor({
         </div>
         <div className="border rounded-lg overflow-hidden">
           <MonacoEditor
-            height="400px"
+            height="300px"
             language="python"
             value={outputTemplate}
             onChange={(value) => setOutputTemplate(value || "")}

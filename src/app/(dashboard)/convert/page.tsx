@@ -5,6 +5,7 @@ import { useConverterStore } from "@/store/converter-store";
 import { FileUploader } from "@/components/converter/file-uploader";
 import { JobPreview } from "@/components/converter/job-preview";
 import { OutputViewer } from "@/components/converter/output-viewer";
+import { ConversionReportView } from "@/components/converter/conversion-report";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -16,9 +17,29 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, Loader2, RefreshCw, Settings2, Info } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  ArrowRight,
+  Loader2,
+  RefreshCw,
+  Settings2,
+  Info,
+  BarChart3,
+  Layers,
+} from "lucide-react";
 import { parseControlM } from "@/lib/parser";
-import { generateDags, type AirflowVersion } from "@/lib/generator";
+import {
+  convertControlMToAirflow,
+  getDividerStrategies,
+  type AirflowVersion,
+  type DivideStrategy,
+} from "@/lib/converter";
 import { addConversionToHistory } from "@/lib/storage/config-storage";
 import { toast } from "sonner";
 
@@ -33,8 +54,12 @@ export default function ConvertPage() {
     isProcessing,
     error,
     generatedDags,
+    conversionReport,
+    divideStrategy,
     setParsedDefinition,
     setGeneratedDags,
+    setConversionReport,
+    setDivideStrategy,
     setIsProcessing,
     setError,
     setStep,
@@ -44,6 +69,9 @@ export default function ConvertPage() {
   const [selectedTemplate, setSelectedTemplate] = useState("default");
   const [airflowVersion, setAirflowVersion] = useState<AirflowVersion>("3.1");
   const [useTaskFlowApi, setUseTaskFlowApi] = useState(false);
+  const [showReportDialog, setShowReportDialog] = useState(false);
+
+  const dividerStrategies = getDividerStrategies();
 
   const handleParse = async () => {
     if (!inputContent || !inputType) return;
@@ -76,19 +104,23 @@ export default function ConvertPage() {
         selectedJobs.includes(job.JOBNAME)
       );
 
-      const dags = await generateDags(jobsToConvert, {
-        templateId: selectedTemplate,
+      // Use the new converter engine
+      const result = await convertControlMToAirflow(jobsToConvert, {
         airflowVersion,
         useTaskFlowApi,
+        divideStrategy: { strategy: divideStrategy },
+        includeComments: true,
       });
-      setGeneratedDags(dags);
+
+      setGeneratedDags(result.dags);
+      setConversionReport(result.report);
       setStep("result");
 
       // Save to conversion history
       addConversionToHistory({
         sourceFile: inputFile?.name || "unknown.xml",
         sourceType: inputType || "xml",
-        jobsConverted: dags.flatMap((dag) =>
+        jobsConverted: result.dags.flatMap((dag) =>
           dag.dag.tasks.map((task) => ({
             jobName: task.taskId,
             dagId: dag.dag.dagId,
@@ -96,10 +128,17 @@ export default function ConvertPage() {
           }))
         ),
         airflowVersion,
-        status: "success",
+        status: result.report.summary.failedJobs > 0 ? "partial" : "success",
       });
 
-      toast.success(`Generated ${dags.length} DAG(s) for Airflow ${airflowVersion}`);
+      toast.success(
+        `Generated ${result.dags.length} DAG(s) for Airflow ${airflowVersion}`
+      );
+
+      // Show warnings if any
+      if (result.report.warnings.length > 0) {
+        toast.warning(`${result.report.warnings.length} warnings - check report for details`);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate DAGs";
       setError(message);
@@ -209,9 +248,7 @@ export default function ConvertPage() {
           </Card>
 
           {/* Job Selection */}
-          {(step === "convert" || step === "result") && (
-            <JobPreview />
-          )}
+          {(step === "convert" || step === "result") && <JobPreview />}
         </div>
 
         {/* Right Panel */}
@@ -249,6 +286,34 @@ export default function ConvertPage() {
                   </Select>
                 </div>
 
+                {/* DAG Divider Strategy */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Layers className="h-4 w-4" />
+                    DAG Grouping Strategy
+                  </Label>
+                  <Select
+                    value={divideStrategy}
+                    onValueChange={(v) => setDivideStrategy(v as DivideStrategy)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {dividerStrategies.map((strategy) => (
+                        <SelectItem key={strategy.value} value={strategy.value}>
+                          <div className="flex flex-col">
+                            <span>{strategy.label}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {strategy.description}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Template Selection */}
                 <div className="space-y-2">
                   <Label>Template</Label>
@@ -260,15 +325,9 @@ export default function ConvertPage() {
                       <SelectValue placeholder="Select a template" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="default">
-                        Default Template
-                      </SelectItem>
-                      <SelectItem value="bash">
-                        Bash Operator Only
-                      </SelectItem>
-                      <SelectItem value="python">
-                        Python Operator
-                      </SelectItem>
+                      <SelectItem value="default">Default Template</SelectItem>
+                      <SelectItem value="bash">Bash Operator Only</SelectItem>
+                      <SelectItem value="python">Python Operator</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -325,21 +384,44 @@ export default function ConvertPage() {
                 </Button>
 
                 <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                  <Badge variant="outline">
-                    Airflow {airflowVersion}
-                  </Badge>
+                  <Badge variant="outline">Airflow {airflowVersion}</Badge>
                   {isAirflow3 && useTaskFlowApi && (
                     <Badge variant="secondary">TaskFlow API</Badge>
                   )}
+                  <Badge variant="outline" className="capitalize">
+                    {divideStrategy}
+                  </Badge>
                 </div>
               </CardContent>
             </Card>
           )}
 
           {/* Output */}
-          {step === "result" && <OutputViewer />}
+          {step === "result" && (
+            <OutputViewer
+              onShowReport={() => setShowReportDialog(true)}
+            />
+          )}
         </div>
       </div>
+
+      {/* Conversion Report Dialog */}
+      <Dialog open={showReportDialog} onOpenChange={setShowReportDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              Conversion Report
+            </DialogTitle>
+            <DialogDescription>
+              Detailed analysis of the conversion process
+            </DialogDescription>
+          </DialogHeader>
+          {conversionReport && (
+            <ConversionReportView report={conversionReport} />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -362,8 +444,8 @@ function StepIndicator({
           active
             ? "bg-primary text-primary-foreground"
             : completed
-            ? "bg-primary/20 text-primary"
-            : "bg-muted text-muted-foreground"
+              ? "bg-primary/20 text-primary"
+              : "bg-muted text-muted-foreground"
         }`}
       >
         {number}

@@ -41,7 +41,7 @@ export async function generateDags(
 
     // Create DAG definition
     const dag: AirflowDAG = {
-      dagId: toSnakeCase(folderName),
+      dagId: normalizeId(folderName),
       description: `Migrated from Control-M folder: ${folderName}`,
       schedule: "None",
       tags: ["control-m-migration", folderName.toLowerCase()],
@@ -63,7 +63,7 @@ export async function generateDags(
     });
 
     generatedDags.push({
-      filename: `${toSnakeCase(folderName)}_dag.py`,
+      filename: `${normalizeId(folderName)}_dag.py`,
       content,
       dag,
     });
@@ -72,12 +72,13 @@ export async function generateDags(
   return generatedDags;
 }
 
-function toSnakeCase(str: string): string {
+function normalizeId(str: string): string {
   return str
-    .replace(/([A-Z])/g, "_$1")
-    .replace(/[-\s]+/g, "_")
-    .replace(/^_/, "")
-    .replace(/_+/g, "_")
+    .replace(/([a-z])([A-Z])/g, "$1_$2") // camelCase to snake_case
+    .replace(/[-\s]+/g, "_") // dashes and spaces to underscore
+    .replace(/[^a-zA-Z0-9_]/g, "") // remove special chars
+    .replace(/_+/g, "_") // collapse multiple underscores
+    .replace(/^_|_$/g, "") // trim leading/trailing underscores
     .toLowerCase();
 }
 

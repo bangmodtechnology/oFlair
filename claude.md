@@ -173,6 +173,13 @@ oflair/
 │   │   │   ├── xml-parser.ts
 │   │   │   ├── json-parser.ts
 │   │   │   └── job-normalizer.ts
+│   │   ├── converter/            # Main converter engine (dagify-inspired)
+│   │   │   ├── index.ts          # Main entry point
+│   │   │   ├── rules.ts          # Transformation rules
+│   │   │   ├── dag-divider.ts    # DAG splitting strategies
+│   │   │   ├── schedule-converter.ts  # Cron conversion
+│   │   │   ├── report.ts         # Conversion report
+│   │   │   └── export.ts         # Export utilities
 │   │   ├── generator/            # Airflow generators
 │   │   │   ├── dag-generator.ts
 │   │   │   ├── task-generator.ts
@@ -181,6 +188,8 @@ oflair/
 │   │   │   ├── bash-operator.hbs
 │   │   │   ├── python-operator.hbs
 │   │   │   └── sensor-operator.hbs
+│   │   ├── storage/              # Local storage
+│   │   │   └── config-storage.ts # localStorage wrapper
 │   │   └── utils/                # Utilities
 │   │
 │   ├── store/                    # State management
@@ -377,8 +386,9 @@ npx shadcn@latest add button card dialog form input select tabs toast
 # Add other dependencies
 npm install zustand zod react-hook-form @hookform/resolvers
 npm install @monaco-editor/react reactflow
-npm install prisma @prisma/client
 npm install handlebars fast-xml-parser
+npm install jszip file-saver
+npm install sonner  # Toast notifications
 
 # Dev dependencies
 npm install -D @types/node
@@ -398,9 +408,10 @@ npm install -D @types/node
 | Zod | Validation | https://zod.dev |
 | Monaco Editor | Code editor | https://microsoft.github.io/monaco-editor |
 | React Flow | DAG visualization | https://reactflow.dev |
-| Prisma | Database ORM | https://prisma.io |
 | Handlebars | Templating | https://handlebarsjs.com |
 | fast-xml-parser | XML parsing | https://github.com/NaturalIntelligence/fast-xml-parser |
+| JSZip | ZIP file generation | https://stuk.github.io/jszip |
+| file-saver | File download utility | https://github.com/eligrey/FileSaver.js |
 
 ---
 
@@ -442,3 +453,161 @@ npm install -D @types/node
   - EmailOperator
 - [x] เพิ่มส่วน Preview DAG หลัง Convert (OutputViewer component)
 - [x] เพิ่มเมนู Conversion History (`/history` page)
+- [x] **New Converter Engine** (dagify-inspired):
+  - Rules Engine สำหรับ transformation (`src/lib/converter/rules.ts`)
+  - DAG Divider สำหรับแบ่ง jobs เป็นหลาย DAGs (`src/lib/converter/dag-divider.ts`)
+  - Schedule Converter แปลง Control-M scheduling เป็น cron (`src/lib/converter/schedule-converter.ts`)
+  - Conversion Report พร้อม warnings และ statistics (`src/lib/converter/report.ts`)
+  - Bulk Export เป็น ZIP พร้อม README.md และ requirements.txt (`src/lib/converter/export.ts`)
+  - รองรับ Airflow 2.5 - 3.1 พร้อม TaskFlow API
+
+---
+
+## 🔄 Converter Engine Architecture
+
+### Overview
+Engine ใหม่ได้รับแรงบันดาลใจจาก [Google Cloud Platform dagify](https://github.com/GoogleCloudPlatform/dagify)
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Parse     │────▶│   Rules     │────▶│   Divide    │────▶│  Generate   │
+│  Control-M  │     │  Transform  │     │   DAGs      │     │   Code      │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+                           │                   │                   │
+                           ▼                   ▼                   ▼
+                    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+                    │  Normalize  │     │  Schedule   │     │   Report    │
+                    │  Job Data   │     │  Convert    │     │  Generate   │
+                    └─────────────┘     └─────────────┘     └─────────────┘
+```
+
+### 1. Rules Engine (`src/lib/converter/rules.ts`)
+
+Transformation functions สำหรับแปลงค่าต่างๆ:
+
+| Function | Description | Example |
+|----------|-------------|---------|
+| `lowercase` | แปลงเป็นตัวพิมพ์เล็ก | `JOB_NAME` → `job_name` |
+| `uppercase` | แปลงเป็นตัวพิมพ์ใหญ่ | `job_name` → `JOB_NAME` |
+| `python_variable_safe` | ทำให้เป็น Python variable ที่ถูกต้อง | `my-job` → `my_job` |
+| `escape_quotes` | escape quotes สำหรับ string | `it's` → `it\'s` |
+| `prefix:xxx` | เพิ่ม prefix | `task` → `xxx_task` |
+| `suffix:xxx` | เพิ่ม suffix | `task` → `task_xxx` |
+| `replace:old:new` | แทนที่ข้อความ | custom replacement |
+| `trim` | ตัด whitespace | ` text ` → `text` |
+| `default:xxx` | ค่า default ถ้าว่าง | empty → `xxx` |
+| `lookup:key` | ค้นหาค่าจาก mapping | lookup จาก dictionary |
+
+### 2. DAG Divider (`src/lib/converter/dag-divider.ts`)
+
+Strategies สำหรับแบ่ง jobs เป็นหลาย DAGs:
+
+| Strategy | Description |
+|----------|-------------|
+| `folder` | แบ่งตาม PARENT_FOLDER (default) |
+| `application` | แบ่งตาม APPLICATION field |
+| `sub_application` | แบ่งตาม SUB_APPLICATION field |
+| `single` | รวมทุก jobs เป็น DAG เดียว |
+| `custom` | กำหนด custom grouping function |
+
+Options:
+- `maxJobsPerDag`: จำกัดจำนวน jobs ต่อ DAG (auto-split ถ้าเกิน)
+- `preserveDependencies`: รักษา dependencies ข้าม DAGs
+
+### 3. Schedule Converter (`src/lib/converter/schedule-converter.ts`)
+
+แปลง Control-M scheduling เป็น Airflow cron expressions:
+
+```typescript
+// Control-M fields ที่รองรับ:
+// - DAYS: วันในสัปดาห์ (SUN, MON, TUE, ...)
+// - TIME: เวลาที่รัน (HHMM format)
+// - INTERVAL: ความถี่ (minutes)
+// - MONTHS: เดือนที่รัน
+
+// Example:
+// DAYS="MON,WED,FRI" + TIME="0930"
+// → "30 9 * * 1,3,5"
+```
+
+Functions:
+- `convertSchedule(job)` - แปลงเป็น cron expression
+- `cronToHuman(cron)` - แปลงเป็นข้อความอ่านง่าย
+- `validateCron(cron)` - ตรวจสอบ cron validity
+
+### 4. Conversion Report (`src/lib/converter/report.ts`)
+
+รายงานผลการ conversion:
+
+```typescript
+interface ConversionReport {
+  summary: {
+    totalJobs: number;
+    convertedJobs: number;
+    failedJobs: number;
+    dagsGenerated: number;
+    conversionRate: number;
+  };
+  jobTypes: { type: string; count: number }[];
+  operatorUsage: { operator: string; count: number }[];
+  warnings: Warning[];
+  manualReviewItems: ManualReviewItem[];
+  dependencyStats: {
+    totalDependencies: number;
+    crossDagDependencies: number;
+    circularDependencies: string[][];
+  };
+}
+```
+
+Export formats:
+- `formatReportAsText()` - Plain text report
+- `formatReportAsJson()` - JSON format
+
+### 5. Export Utilities (`src/lib/converter/export.ts`)
+
+Functions สำหรับ export:
+
+| Function | Description |
+|----------|-------------|
+| `downloadFile(content, filename)` | Download single file |
+| `downloadDag(dag)` | Download single DAG |
+| `downloadAllAsZip(dags, report, options)` | Download all as ZIP |
+| `copyToClipboard(content)` | Copy to clipboard |
+
+ZIP contents:
+```
+conversion_output.zip
+├── dags/
+│   ├── dag_1.py
+│   ├── dag_2.py
+│   └── ...
+├── README.md          # Conversion summary
+└── requirements.txt   # Python dependencies
+```
+
+### 6. Airflow Version Support
+
+รองรับ Airflow versions:
+- **2.5.x** - 2.10.x: Classic import paths
+- **3.0.x** - 3.1.x: New import paths (`airflow.providers.standard`, `airflow.sdk`)
+
+Options:
+- `useTaskFlowApi`: ใช้ @dag decorator (Airflow 3.x only)
+- `includeComments`: เพิ่ม comments อธิบายใน code
+
+### Usage Example
+
+```typescript
+import { convertControlMToAirflow } from '@/lib/converter';
+
+const result = await convertControlMToAirflow(jobs, {
+  airflowVersion: '3.1',
+  useTaskFlowApi: true,
+  divideStrategy: { strategy: 'folder' },
+  includeComments: true,
+});
+
+// result.dags - Generated DAGs
+// result.report - Conversion report with warnings
+```
