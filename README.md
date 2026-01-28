@@ -1,36 +1,130 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# OFlair - Control-M to Airflow Converter
 
-## Getting Started
+![OFlair Banner](public/globe.svg) *PLACEHOLDER: รูป Banner หรือ Logo ของโปรเจค*
 
-First, run the development server:
+**OFlair** คือเครื่องมือสำหรับช่วยแปลง Job Definitions จาก **BMC Control-M** ไปเป็น **Apache Airflow DAGs** โดยอัตโนมัติ ช่วยลดเวลาและความผิดพลาดในการเขียนโค้ด Python ด้วยมือ รองรับการแปลงเงื่อนไข (Conditions) และ Schedule ที่ซับซ้อนให้กลายเป็น Airflow Standard
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 🌟 ฟีเจอร์หลัก (Key Features)
+
+*   **Smart Parsing:** อ่านไฟล์ XML ที่ Export มาจาก Control-M ได้ทั้งแบบ Folder ปกติและ SMART Folder
+*   **Automatic DAG Generation:** สร้างไฟล์ Python DAG ตามมาตรฐาน Airflow (รองรับทั้ง Airflow 2.x และ 3.x)
+*   **Dependency Resolution:** แปลงเงื่อนไข `INCOND`/`OUTCOND` เป็นความสัมพันธ์ `>>` ใน Airflow และรองรับ Cross-DAG Dependencies (ผ่าน `ExternalTaskSensor`)
+*   **Operator Mapping:** เลือกใช้ Airflow Operator ที่เหมาะสมกับ Job Type โดยอัตโนมัติ (เช่น Bash, Kubernetes, SSH, SQL, AWS, SAP, etc.)
+*   **Advanced Scheduling:** แปลงการตั้งเวลา (Schedule) ของ Control-M ให้เป็น Cron Expression หรือ Airflow Timetable
+*   **Modern UI:** ใช้งานผ่านเว็บอินเทอร์เฟซที่สวยงาม ทันสมัย (สร้างด้วย Next.js และ Tailwind CSS)
+
+---
+
+## 🚀 การเริ่มต้นใช้งาน (Getting Started)
+
+### สิ่งที่ต้องมี (Prerequisites)
+*   **Node.js**: เวอร์ชั่น 18 หรือใหม่กว่า
+*   **npm** หรือ **yarn** หรือ **pnpm**
+*   **Git**
+
+### การติดตั้ง (Installation)
+
+1.  **Clone โปรเจค:**
+    ```bash
+    git clone https://github.com/bangmodtech/oflair.git
+    cd oflair
+    ```
+
+2.  **ติดตั้ง Dependencies:**
+    ```bash
+    npm install
+    ```
+
+3.  **ตั้งค่าฐานข้อมูล (SQLite):**
+    ```bash
+    npx prisma migrate dev
+    ```
+
+4.  **รันโปรแกรม (Development Mode):**
+    ```bash
+    npm run dev
+    ```
+
+5.  **ใช้งานผ่าน Browser:**
+    เปิด [http://localhost:3000](http://localhost:3000)
+
+---
+
+## 📖 คู่มือการใช้งาน (Usage Guide)
+
+### 1. การเตรียมไฟล์ (Prepare Files)
+Export Job จาก Control-M เป็นไฟล์ **XML** โดยเลือก Job หรือ Folder ที่ต้องการย้าย
+
+### 2. การแปลงไฟล์ (Conversion Process)
+1.  ไปที่หน้า **Convert** ในเมนูหลัก
+2.  อัปโหลดไฟล์ XML ที่เตรียมไว้
+3.  ระบบจะทำการ Validate ไฟล์และแสดงจำนวน Jobs ที่พบ
+4.  ตั้งค่าการแปลง (Conversion Options):
+    *   **Airflow Version:** เลือกเวอร์ชั่นปลายทาง (แนะนำ 2.9 หรือ 3.0)
+    *   **TaskFlow API:** เปิดใช้งานถ้าต้องการโค้ดสไตล์ใหม่ (`@task`)
+    *   **DAG Prefix/Suffix:** ตั้งชื่อนำหน้า/ต่อท้าย DAG ID
+5.  กดปุ่ม **Convert**
+
+### 3. การตรวจสอบและดาวน์โหลด (Review & Export)
+*   ดูตัวอย่างโค้ด (Code Preview) ได้ทันทีบนหน้าเว็บ
+*   ดูรายงาน (Report) ว่ามี Job ไหนที่แปลงไม่ได้ หรือมี Warning อะไรบ้าง
+*   กด **Download** เพื่อรับไฟล์ `.zip` ที่ประกอบด้วยไฟล์ Python DAGs ทั้งหมด
+
+---
+
+## 🛠️ การใช้งานขั้นสูง (Advanced Usage)
+
+### การจัดการ Dependencies ข้าม DAG (Cross-DAG Dependencies)
+OFlair ฉลาดพอที่จะตรวจสอบว่า Job มีการรอเงื่อนไขจาก Folder อื่นหรือไม่
+*   หากพบว่าเงื่อนไขมาจาก Job ในไฟล์เดียวกันแต่คนละ Folder (ซึ่งถูกแยกเป็นคนละ DAG) ระบบจะสร้าง `ExternalTaskSensor` ให้โดยอัตโนมัติ
+
+### Operator Mapping Logic
+ระบบจะตรวจสอบ `JOB_TYPE`, `CMDLINE` และ `FILENAME` เพื่อเลือก Operator ดังนี้:
+
+| Control-M Job Type | Airflow Operator | หมายเหตุ |
+|-------------------|------------------|----------|
+| OS / Command | `BashOperator` | Default |
+| File Watcher | `FileSensor` | |
+| Kubernetes / Docker | `KubernetesPodOperator` | |
+| SSH / Remote | `SSHOperator` | |
+| Database / SQL | `SQLExecuteQueryOperator` | |
+| Python Script | `PythonOperator` | |
+| Dummy / Box | `EmptyOperator` | |
+| AWS Lambda | `LambdaInvokeFunctionOperator` | |
+| Spark | `SparkSubmitOperator` | |
+| SAP HANA | `SapHanaOperator` | |
+| SFTP | `SFTPOperator` | |
+
+### การปรับแต่งเทมเพลต (Custom Templates)
+ระบบใช้ **Handlebars** ในการสร้างโค้ด Python
+*   ไฟล์เทมเพลตหลักอยู่ที่ `src/lib/templates/` (อาจต้องแก้โค้ดหากต้องการปรับโครงสร้างใหญ่)
+*   คุณสามารถแก้ไข Logic การ Mapping ได้ที่ `src/lib/converter/index.ts` ฟังก์ชัน `convertJobToTask`
+
+---
+
+## 🏗️ โครงสร้างโปรเจค (Project Structure)
+
+```text
+/src
+  ├── app/              # Next.js App Router (Pages & API)
+  ├── components/       # UI Components
+  │   ├── converter/    # Components สำหรับหน้าแปลงไฟล์
+  │   └── ui/           # Shared UI (Button, Card, Input)
+  ├── lib/
+  │   ├── converter/    # Core Logic สำหรับการแปลง
+  │   ├── parser/       # ตัวอ่านไฟล์ XML Control-M
+  │   ├── generator/    # ตัวสร้างไฟล์ Python DAG
+  │   └── templates/    # Handlebars Templates
+  ├── prisma/           # Database Schema (SQLite)
+  └── types/            # TypeScript Definitions
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 💻 Tech Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+*   **Frontend:** Next.js 16, React 19, Tailwind CSS v4, Lucide React
+*   **Backend Logic:** TypeScript, Fast-XML-Parser, Handlebars
+*   **Database:** Prisma ORM, SQLite
+*   **State Management:** Zustand
+*   **Testing:** Vitest
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
