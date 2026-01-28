@@ -1,0 +1,55 @@
+# KubernetesPodOperator Template
+# For containerized workloads
+
+id: kubernetes-pod-operator
+name: Container to KubernetesPodOperator
+description: Converts Control-M jobs to Airflow KubernetesPodOperator for Kubernetes deployments
+isDefault: false
+isActive: true
+priority: 85
+
+conditions:
+  - field: JOB_TYPE
+    operator: equals
+    value: Kubernetes
+  - field: JOB_TYPE
+    operator: equals
+    value: Container
+  - field: JOB_TYPE
+    operator: equals
+    value: Docker
+
+mappings:
+  - source: JOBNAME
+    target: task_id
+    transform: lowercase
+  - source: CMDLINE
+    target: cmds
+  - source: FILENAME
+    target: image
+    defaultValue: python:3.9
+  - source: HOST
+    target: namespace
+    defaultValue: default
+
+outputTemplate: |
+  {{task_id}} = KubernetesPodOperator(
+      task_id='{{task_id}}',
+      name='{{task_id}}-pod',
+      namespace='{{namespace}}',
+      image='{{image}}',
+  {{#if cmds}}
+      cmds=['/bin/bash', '-c'],
+      arguments=['''{{cmds}}'''],
+  {{/if}}
+      get_logs=True,
+      is_delete_operator_pod=True,
+  {{#if variables}}
+      env_vars={
+  {{#each variables}}
+          '{{name}}': '{{value}}',
+  {{/each}}
+      },
+  {{/if}}
+      dag=dag
+  )

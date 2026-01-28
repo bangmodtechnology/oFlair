@@ -56,7 +56,7 @@ const defaultTemplates: ConversionTemplate[] = [
       { id: "c1", field: "JOB_TYPE", operator: "equals", value: "Command" },
     ],
     mappings: [
-      { id: "m1", source: "JOBNAME", target: "task_id", transform: "snake_case" },
+      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
       { id: "m2", source: "CMDLINE", target: "bash_command" },
     ],
     outputTemplate: DEFAULT_TEMPLATE_OUTPUT,
@@ -74,7 +74,7 @@ const defaultTemplates: ConversionTemplate[] = [
       { id: "c1", field: "JOB_TYPE", operator: "equals", value: "FileWatcher" },
     ],
     mappings: [
-      { id: "m1", source: "JOBNAME", target: "task_id", transform: "snake_case" },
+      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
       { id: "m2", source: "FILENAME", target: "filepath" },
     ],
     outputTemplate: `{{task_id}} = FileSensor(
@@ -100,7 +100,7 @@ const defaultTemplates: ConversionTemplate[] = [
       { id: "c2", field: "FILENAME", operator: "ends_with", value: ".py" },
     ],
     mappings: [
-      { id: "m1", source: "JOBNAME", target: "task_id", transform: "snake_case" },
+      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
       { id: "m2", source: "FILENAME", target: "python_callable" },
     ],
     outputTemplate: `{{task_id}} = PythonOperator(
@@ -432,7 +432,6 @@ function TemplateEditor({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No transform</SelectItem>
-                    <SelectItem value="snake_case">snake_case</SelectItem>
                     <SelectItem value="lowercase">lowercase</SelectItem>
                     <SelectItem value="uppercase">UPPERCASE</SelectItem>
                   </SelectContent>

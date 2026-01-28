@@ -9,6 +9,7 @@ import {
   Settings,
   Github,
   BookOpen,
+  History,
 } from "lucide-react";
 import {
   Sidebar,
@@ -38,6 +39,11 @@ const menuItems = [
     title: "Templates",
     url: "/templates",
     icon: FileCode,
+  },
+  {
+    title: "History",
+    url: "/history",
+    icon: History,
   },
   {
     title: "Settings",

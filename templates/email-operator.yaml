@@ -1,0 +1,43 @@
+# EmailOperator Template
+# For notification jobs
+
+id: email-operator
+name: Notification to EmailOperator
+description: Converts Control-M notification jobs to Airflow EmailOperator
+isDefault: false
+isActive: true
+priority: 70
+
+conditions:
+  - field: JOB_TYPE
+    operator: equals
+    value: Notification
+  - field: JOB_TYPE
+    operator: contains
+    value: Email
+  - field: JOB_TYPE
+    operator: contains
+    value: Mail
+
+mappings:
+  - source: JOBNAME
+    target: task_id
+    transform: lowercase
+  - source: DESCRIPTION
+    target: subject
+    defaultValue: Airflow Notification
+  - source: CMDLINE
+    target: html_content
+
+outputTemplate: |
+  {{task_id}} = EmailOperator(
+      task_id='{{task_id}}',
+      to=['admin@example.com'],
+      subject='{{subject}}',
+  {{#if html_content}}
+      html_content='''{{html_content}}''',
+  {{else}}
+      html_content='<p>Job {{original_jobname}} completed</p>',
+  {{/if}}
+      dag=dag
+  )

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -21,58 +20,59 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Save, RotateCcw, Database, Code, Settings2 } from "lucide-react";
+import { Save, RotateCcw, HardDrive, Code, Settings2, Check } from "lucide-react";
 import { toast } from "sonner";
+import {
+  loadConfig,
+  saveConfig,
+  resetConfig,
+  type AppConfig,
+  DEFAULT_CONFIG,
+} from "@/lib/storage/config-storage";
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState({
-    // DAG defaults
-    defaultOwner: "airflow",
-    defaultRetries: 1,
-    defaultRetryDelay: 5,
-    defaultSchedule: "None",
-    catchup: false,
+  const [settings, setSettings] = useState<AppConfig>(DEFAULT_CONFIG);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [isSaved, setIsSaved] = useState(true);
 
-    // Naming conventions
-    dagIdPrefix: "",
-    dagIdSuffix: "_dag",
-    taskIdCase: "snake_case",
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    const loaded = loadConfig();
+    setSettings(loaded);
+    setIsLoaded(true);
+  }, []);
 
-    // Output format
-    pythonVersion: "3.9",
-    airflowVersion: "3.1",
-    useTaskFlowApi: false,
-    includeComments: true,
-    includeDocstrings: true,
-
-    // Database
-    databaseUrl: "file:./dev.db",
-  });
+  // Track unsaved changes
+  useEffect(() => {
+    if (isLoaded) {
+      setIsSaved(false);
+    }
+  }, [settings, isLoaded]);
 
   const handleSave = () => {
-    // In a real app, this would save to the database
-    toast.success("Settings saved successfully");
+    const success = saveConfig(settings);
+    if (success) {
+      toast.success("Settings saved successfully");
+      setIsSaved(true);
+    } else {
+      toast.error("Failed to save settings");
+    }
   };
 
   const handleReset = () => {
-    setSettings({
-      defaultOwner: "airflow",
-      defaultRetries: 1,
-      defaultRetryDelay: 5,
-      defaultSchedule: "None",
-      catchup: false,
-      dagIdPrefix: "",
-      dagIdSuffix: "_dag",
-      taskIdCase: "snake_case",
-      pythonVersion: "3.9",
-      airflowVersion: "3.1",
-      useTaskFlowApi: false,
-      includeComments: true,
-      includeDocstrings: true,
-      databaseUrl: "file:./dev.db",
-    });
+    const defaultSettings = resetConfig();
+    setSettings(defaultSettings);
     toast.info("Settings reset to defaults");
+    setIsSaved(false);
   };
+
+  if (!isLoaded) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">Loading settings...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -85,13 +85,27 @@ export default function SettingsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {!isSaved && (
+            <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+              Unsaved changes
+            </Badge>
+          )}
           <Button variant="outline" onClick={handleReset}>
             <RotateCcw className="h-4 w-4 mr-2" />
             Reset to Defaults
           </Button>
-          <Button onClick={handleSave}>
-            <Save className="h-4 w-4 mr-2" />
-            Save Changes
+          <Button onClick={handleSave} disabled={isSaved}>
+            {isSaved ? (
+              <>
+                <Check className="h-4 w-4 mr-2" />
+                Saved
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4 mr-2" />
+                Save Changes
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -237,7 +251,7 @@ export default function SettingsPage() {
               <Label htmlFor="taskIdCase">Task ID Case</Label>
               <Select
                 value={settings.taskIdCase}
-                onValueChange={(value) =>
+                onValueChange={(value: "lowercase" | "original") =>
                   setSettings({ ...settings, taskIdCase: value })
                 }
               >
@@ -245,7 +259,6 @@ export default function SettingsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="snake_case">snake_case</SelectItem>
                   <SelectItem value="lowercase">lowercase</SelectItem>
                   <SelectItem value="original">Keep Original</SelectItem>
                 </SelectContent>
@@ -383,36 +396,41 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Database */}
+        {/* Storage Info */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              Database
+              <HardDrive className="h-5 w-5" />
+              Storage
             </CardTitle>
             <CardDescription>
-              Configure database connection for storing templates
+              Settings and templates storage information
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="databaseUrl">Database URL</Label>
-              <Input
-                id="databaseUrl"
-                value={settings.databaseUrl}
-                onChange={(e) =>
-                  setSettings({ ...settings, databaseUrl: e.target.value })
-                }
-                placeholder="file:./dev.db"
-              />
-              <p className="text-xs text-muted-foreground">
-                SQLite connection string. For production, use PostgreSQL or MySQL.
+              <Label>Storage Type</Label>
+              <p className="text-sm text-muted-foreground">
+                All settings and custom templates are stored in your browser&apos;s localStorage.
+                Data persists across sessions but is specific to this browser.
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary">SQLite</Badge>
-              <Badge variant="outline">Local Storage</Badge>
+            <Separator />
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant="secondary">localStorage</Badge>
+              <Badge variant="outline">Browser Storage</Badge>
+              <Badge variant="outline" className="text-green-600 border-green-600">
+                No Database Required
+              </Badge>
+            </div>
+
+            <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800">
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                <strong>Note:</strong> Clearing browser data will remove your settings and custom templates.
+                Consider exporting important templates before clearing data.
+              </p>
             </div>
           </CardContent>
         </Card>

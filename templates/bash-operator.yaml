@@ -1,0 +1,48 @@
+# BashOperator Template
+# For Command/OS type jobs
+
+id: bash-operator
+name: Command to BashOperator
+description: Converts Control-M Command/OS jobs to Airflow BashOperator
+isDefault: true
+isActive: true
+priority: 100
+
+conditions:
+  - field: JOB_TYPE
+    operator: equals
+    value: Command
+  - field: JOB_TYPE
+    operator: equals
+    value: OS
+
+mappings:
+  - source: JOBNAME
+    target: task_id
+    transform: lowercase
+  - source: CMDLINE
+    target: bash_command
+    required: true
+  - source: RUN_AS
+    target: env.USER
+  - source: HOST
+    target: pool
+
+outputTemplate: |
+  {{task_id}} = BashOperator(
+      task_id='{{task_id}}',
+      bash_command='''{{bash_command}}''',
+  {{#if env}}
+      env={{env}},
+  {{/if}}
+  {{#if pool}}
+      pool='{{pool}}',
+  {{/if}}
+  {{#if variables}}
+      # Variables from Control-M
+  {{#each variables}}
+      # {{name}}: {{value}}
+  {{/each}}
+  {{/if}}
+      dag=dag
+  )

@@ -61,6 +61,19 @@ export const AIRFLOW_OPERATORS = {
   S3_KEY_SENSOR: 'S3KeySensor',
   GCS_OBJECT_SENSOR: 'GCSObjectExistenceSensor',
 
+  // Kubernetes
+  KUBERNETES_POD: 'KubernetesPodOperator',
+
+  // Azure
+  AZURE_BLOB_SENSOR: 'WasbBlobSensor',
+  AZURE_BLOB_UPLOAD: 'WasbBlobUploadOperator',
+
+  // SSH
+  SSH: 'SSHOperator',
+
+  // Email
+  EMAIL: 'EmailOperator',
+
   // HTTP
   SIMPLE_HTTP: 'SimpleHttpOperator',
 } as const;

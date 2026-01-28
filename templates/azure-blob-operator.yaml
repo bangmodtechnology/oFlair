@@ -1,0 +1,48 @@
+# AzureBlobStorageOperator Template
+# For Azure Blob Storage operations
+
+id: azure-blob-operator
+name: Azure to AzureBlobStorageOperator
+description: Converts Control-M Azure jobs to Airflow Azure Blob Storage operators
+isDefault: false
+isActive: true
+priority: 80
+
+conditions:
+  - field: JOB_TYPE
+    operator: equals
+    value: Azure
+  - field: JOB_TYPE
+    operator: contains
+    value: Blob
+  - field: APPLICATION
+    operator: contains
+    value: Azure
+
+mappings:
+  - source: JOBNAME
+    target: task_id
+    transform: lowercase
+  - source: FILENAME
+    target: blob_name
+  - source: HOST
+    target: container_name
+    defaultValue: default-container
+
+outputTemplate: |
+  # Note: Requires azure-storage-blob provider
+  # pip install apache-airflow-providers-microsoft-azure
+
+  {{task_id}} = AzureBlobStorageCheckBlobOperator(
+      task_id='{{task_id}}',
+      container_name='{{container_name}}',
+      blob_name='{{blob_name}}',
+      wasb_conn_id='azure_blob_default',
+  {{#if variables}}
+      # Variables from Control-M
+  {{#each variables}}
+      # {{name}}: {{value}}
+  {{/each}}
+  {{/if}}
+      dag=dag
+  )

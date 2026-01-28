@@ -55,7 +55,6 @@ export type TransformType =
   | 'none'
   | 'lowercase'
   | 'uppercase'
-  | 'snake_case'
   | 'camel_case'
   | 'trim'
   | 'replace_spaces'

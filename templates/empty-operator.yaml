@@ -1,0 +1,33 @@
+# EmptyOperator Template
+# For Dummy/Box type jobs
+
+id: empty-operator
+name: Dummy to EmptyOperator
+description: Converts Control-M Dummy/Box jobs to Airflow EmptyOperator
+isDefault: true
+isActive: true
+priority: 50
+
+conditions:
+  - field: JOB_TYPE
+    operator: equals
+    value: Dummy
+  - field: JOB_TYPE
+    operator: equals
+    value: Box
+
+mappings:
+  - source: JOBNAME
+    target: task_id
+    transform: lowercase
+  - source: DESCRIPTION
+    target: doc
+
+outputTemplate: |
+  {{task_id}} = EmptyOperator(
+      task_id='{{task_id}}',
+  {{#if doc}}
+      doc='{{doc}}',
+  {{/if}}
+      dag=dag
+  )

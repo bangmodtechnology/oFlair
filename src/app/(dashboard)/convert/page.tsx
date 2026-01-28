@@ -19,17 +19,20 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Loader2, RefreshCw, Settings2, Info } from "lucide-react";
 import { parseControlM } from "@/lib/parser";
 import { generateDags, type AirflowVersion } from "@/lib/generator";
+import { addConversionToHistory } from "@/lib/storage/config-storage";
 import { toast } from "sonner";
 
 export default function ConvertPage() {
   const {
     step,
+    inputFile,
     inputContent,
     inputType,
     parsedDefinition,
     selectedJobs,
     isProcessing,
     error,
+    generatedDags,
     setParsedDefinition,
     setGeneratedDags,
     setIsProcessing,
@@ -80,10 +83,36 @@ export default function ConvertPage() {
       });
       setGeneratedDags(dags);
       setStep("result");
+
+      // Save to conversion history
+      addConversionToHistory({
+        sourceFile: inputFile?.name || "unknown.xml",
+        sourceType: inputType || "xml",
+        jobsConverted: dags.flatMap((dag) =>
+          dag.dag.tasks.map((task) => ({
+            jobName: task.taskId,
+            dagId: dag.dag.dagId,
+            operator: task.operatorType,
+          }))
+        ),
+        airflowVersion,
+        status: "success",
+      });
+
       toast.success(`Generated ${dags.length} DAG(s) for Airflow ${airflowVersion}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate DAGs";
       setError(message);
+
+      // Save failed conversion to history
+      addConversionToHistory({
+        sourceFile: inputFile?.name || "unknown.xml",
+        sourceType: inputType || "xml",
+        jobsConverted: [],
+        airflowVersion,
+        status: "failed",
+      });
+
       toast.error(message);
     } finally {
       setIsProcessing(false);

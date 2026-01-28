@@ -1,0 +1,45 @@
+# PythonOperator Template
+# For Script jobs with .py files
+
+id: python-operator
+name: Script to PythonOperator
+description: Converts Control-M Script jobs with Python files to Airflow PythonOperator
+isDefault: true
+isActive: true
+priority: 90
+
+conditions:
+  - field: JOB_TYPE
+    operator: equals
+    value: Script
+  - field: FILENAME
+    operator: ends_with
+    value: .py
+
+mappings:
+  - source: JOBNAME
+    target: task_id
+    transform: lowercase
+  - source: FILENAME
+    target: python_callable
+  - source: RUN_AS
+    target: op_kwargs.user
+
+outputTemplate: |
+  def run_{{task_id}}(**kwargs):
+      """
+      Auto-generated from Control-M job: {{original_jobname}}
+      Original script: {{python_callable}}
+      """
+      import subprocess
+      result = subprocess.run(['python', '{{python_callable}}'], capture_output=True, text=True)
+      return result.stdout
+
+  {{task_id}} = PythonOperator(
+      task_id='{{task_id}}',
+      python_callable=run_{{task_id}},
+  {{#if op_kwargs}}
+      op_kwargs={{op_kwargs}},
+  {{/if}}
+      dag=dag
+  )

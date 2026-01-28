@@ -1,0 +1,38 @@
+# FileSensor Template
+# For FileWatcher type jobs
+
+id: file-sensor
+name: FileWatcher to FileSensor
+description: Converts Control-M FileWatcher jobs to Airflow FileSensor
+isDefault: true
+isActive: true
+priority: 95
+
+conditions:
+  - field: JOB_TYPE
+    operator: equals
+    value: FileWatcher
+  - field: JOB_TYPE
+    operator: contains
+    value: File
+
+mappings:
+  - source: JOBNAME
+    target: task_id
+    transform: lowercase
+  - source: FILENAME
+    target: filepath
+    required: true
+  - source: MAXWAIT
+    target: timeout
+    defaultValue: "3600"
+
+outputTemplate: |
+  {{task_id}} = FileSensor(
+      task_id='{{task_id}}',
+      filepath='{{filepath}}',
+      poke_interval=60,
+      timeout={{timeout}},
+      mode='poke',
+      dag=dag
+  )

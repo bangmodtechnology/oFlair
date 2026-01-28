@@ -1,0 +1,46 @@
+# SSHOperator Template
+# For remote command execution
+
+id: ssh-operator
+name: Remote Command to SSHOperator
+description: Converts Control-M remote execution jobs to Airflow SSHOperator
+isDefault: false
+isActive: true
+priority: 75
+
+conditions:
+  - field: HOST
+    operator: is_not_empty
+    value: ""
+  - field: JOB_TYPE
+    operator: equals
+    value: Remote
+
+mappings:
+  - source: JOBNAME
+    target: task_id
+    transform: lowercase
+  - source: CMDLINE
+    target: command
+    required: true
+  - source: HOST
+    target: remote_host
+  - source: RUN_AS
+    target: username
+
+outputTemplate: |
+  # Note: Requires SSH provider
+  # pip install apache-airflow-providers-ssh
+
+  {{task_id}} = SSHOperator(
+      task_id='{{task_id}}',
+      ssh_conn_id='ssh_default',
+      command='''{{command}}''',
+  {{#if remote_host}}
+      remote_host='{{remote_host}}',
+  {{/if}}
+  {{#if username}}
+      username='{{username}}',
+  {{/if}}
+      dag=dag
+  )
