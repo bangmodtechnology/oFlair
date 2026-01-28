@@ -189,87 +189,85 @@ export function OutputViewer({ onShowReport }: OutputViewerProps) {
             <TabsContent
               key={dag.filename}
               value={dag.filename}
-              className="m-0 h-[400px]"
+              className="m-0"
             >
-              <div className="h-full flex flex-col">
-                <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
-                  <div className="flex items-center gap-2">
-                    <FileCode className="h-4 w-4" />
-                    <span className="text-sm font-medium">{dag.filename}</span>
-                    <Badge variant="secondary" className="text-xs">
-                      {dag.dag.tasks.length} tasks
+              <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <FileCode className="h-4 w-4" />
+                  <span className="text-sm font-medium">{dag.filename}</span>
+                  <Badge variant="secondary" className="text-xs">
+                    {dag.dag.tasks.length} tasks
+                  </Badge>
+                  {dag.dag.dependencies.length > 0 && (
+                    <Badge variant="outline" className="text-xs">
+                      {dag.dag.dependencies.length} deps
                     </Badge>
-                    {dag.dag.dependencies.length > 0 && (
-                      <Badge variant="outline" className="text-xs">
-                        {dag.dag.dependencies.length} deps
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center border rounded-md overflow-hidden">
-                      <Button
-                        variant={viewMode === "code" ? "secondary" : "ghost"}
-                        size="sm"
-                        className="rounded-none h-7 px-2"
-                        onClick={() => setViewMode("code")}
-                      >
-                        <Code2 className="h-4 w-4 mr-1" />
-                        Code
-                      </Button>
-                      <Button
-                        variant={viewMode === "graph" ? "secondary" : "ghost"}
-                        size="sm"
-                        className="rounded-none h-7 px-2"
-                        onClick={() => setViewMode("graph")}
-                      >
-                        <GitBranch className="h-4 w-4 mr-1" />
-                        Graph
-                      </Button>
-                    </div>
-                    {viewMode === "code" && (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleCopy(dag.content, index)}
-                        >
-                          {copiedIndex === index ? (
-                            <Check className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDownloadSingle(dag)}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div className="flex-1">
-                  {viewMode === "code" ? (
-                    <MonacoEditor
-                      height="100%"
-                      language="python"
-                      value={dag.content}
-                      options={{
-                        readOnly: true,
-                        minimap: { enabled: false },
-                        fontSize: 13,
-                        lineNumbers: "on",
-                        scrollBeyondLastLine: false,
-                        wordWrap: "on",
-                      }}
-                      theme="vs-dark"
-                    />
-                  ) : (
-                    <DependencyGraph dag={dag.dag} />
                   )}
                 </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center border rounded-md overflow-hidden">
+                    <Button
+                      variant={viewMode === "code" ? "secondary" : "ghost"}
+                      size="sm"
+                      className="rounded-none h-7 px-2"
+                      onClick={() => setViewMode("code")}
+                    >
+                      <Code2 className="h-4 w-4 mr-1" />
+                      Code
+                    </Button>
+                    <Button
+                      variant={viewMode === "graph" ? "secondary" : "ghost"}
+                      size="sm"
+                      className="rounded-none h-7 px-2"
+                      onClick={() => setViewMode("graph")}
+                    >
+                      <GitBranch className="h-4 w-4 mr-1" />
+                      Graph
+                    </Button>
+                  </div>
+                  {viewMode === "code" && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleCopy(dag.content, index)}
+                      >
+                        {copiedIndex === index ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDownloadSingle(dag)}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="h-90">
+                {viewMode === "code" ? (
+                  <MonacoEditor
+                    height="360px"
+                    language="python"
+                    value={dag.content}
+                    options={{
+                      readOnly: true,
+                      minimap: { enabled: false },
+                      fontSize: 13,
+                      lineNumbers: "on",
+                      scrollBeyondLastLine: false,
+                      wordWrap: "on",
+                    }}
+                    theme="vs-dark"
+                  />
+                ) : (
+                  <DependencyGraph dag={dag.dag} />
+                )}
               </div>
             </TabsContent>
           ))}

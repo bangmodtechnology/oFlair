@@ -24,7 +24,7 @@ interface ConversionState {
   // UI state
   isProcessing: boolean;
   error: string | null;
-  step: 'upload' | 'preview' | 'convert' | 'result';
+  step: 'upload' | 'select' | 'configure' | 'review' | 'result';
 
   // Actions
   setInputFile: (file: File | null) => void;
@@ -40,7 +40,7 @@ interface ConversionState {
   setDivideStrategy: (strategy: DivideStrategy) => void;
   setIsProcessing: (isProcessing: boolean) => void;
   setError: (error: string | null) => void;
-  setStep: (step: 'upload' | 'preview' | 'convert' | 'result') => void;
+  setStep: (step: 'upload' | 'select' | 'configure' | 'review' | 'result') => void;
   reset: () => void;
 }
 

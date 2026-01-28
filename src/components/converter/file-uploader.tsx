@@ -28,7 +28,7 @@ export function FileUploader() {
       setInputFile(file);
       setInputContent(content);
       setInputType(extension as "xml" | "json");
-      setStep("preview");
+      setStep("select");
     },
     [setInputFile, setInputContent, setInputType, setStep]
   );

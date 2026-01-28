@@ -7,7 +7,7 @@ import { JobPreview } from "@/components/converter/job-preview";
 import { OutputViewer } from "@/components/converter/output-viewer";
 import { ConversionReportView } from "@/components/converter/conversion-report";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -26,12 +26,18 @@ import {
 } from "@/components/ui/dialog";
 import {
   ArrowRight,
+  ArrowLeft,
   Loader2,
   RefreshCw,
   Settings2,
   Info,
   BarChart3,
   Layers,
+  Upload,
+  ListChecks,
+  FileCode,
+  CheckCircle2,
+  Download,
 } from "lucide-react";
 import { parseControlM } from "@/lib/parser";
 import {
@@ -42,6 +48,14 @@ import {
 } from "@/lib/converter";
 import { addConversionToHistory } from "@/lib/storage/config-storage";
 import { toast } from "sonner";
+
+const STEPS = [
+  { id: "upload", label: "Upload", icon: Upload, description: "Upload Control-M file" },
+  { id: "select", label: "Select Jobs", icon: ListChecks, description: "Choose jobs to convert" },
+  { id: "configure", label: "Configure", icon: Settings2, description: "Set output options" },
+  { id: "review", label: "Review", icon: CheckCircle2, description: "Confirm and convert" },
+  { id: "result", label: "Result", icon: Download, description: "Download DAGs" },
+] as const;
 
 export default function ConvertPage() {
   const {
@@ -66,12 +80,13 @@ export default function ConvertPage() {
     reset,
   } = useConverterStore();
 
-  const [selectedTemplate, setSelectedTemplate] = useState("default");
   const [airflowVersion, setAirflowVersion] = useState<AirflowVersion>("3.1");
   const [useTaskFlowApi, setUseTaskFlowApi] = useState(false);
   const [showReportDialog, setShowReportDialog] = useState(false);
 
   const dividerStrategies = getDividerStrategies();
+  const currentStepIndex = STEPS.findIndex((s) => s.id === step);
+  const isAirflow3 = airflowVersion.startsWith("3");
 
   const handleParse = async () => {
     if (!inputContent || !inputType) return;
@@ -82,8 +97,8 @@ export default function ConvertPage() {
     try {
       const result = await parseControlM(inputContent, inputType);
       setParsedDefinition(result);
-      setStep("convert");
-      toast.success(`Parsed ${result.jobs.length} jobs successfully`);
+      setStep("select");
+      toast.success(`Found ${result.jobs.length} jobs`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to parse file";
       setError(message);
@@ -104,7 +119,6 @@ export default function ConvertPage() {
         selectedJobs.includes(job.JOBNAME)
       );
 
-      // Use the new converter engine
       const result = await convertControlMToAirflow(jobsToConvert, {
         airflowVersion,
         useTaskFlowApi,
@@ -116,7 +130,6 @@ export default function ConvertPage() {
       setConversionReport(result.report);
       setStep("result");
 
-      // Save to conversion history
       addConversionToHistory({
         sourceFile: inputFile?.name || "unknown.xml",
         sourceType: inputType || "xml",
@@ -135,15 +148,13 @@ export default function ConvertPage() {
         `Generated ${result.dags.length} DAG(s) for Airflow ${airflowVersion}`
       );
 
-      // Show warnings if any
       if (result.report.warnings.length > 0) {
-        toast.warning(`${result.report.warnings.length} warnings - check report for details`);
+        toast.warning(`${result.report.warnings.length} warnings - check report`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate DAGs";
       setError(message);
 
-      // Save failed conversion to history
       addConversionToHistory({
         sourceFile: inputFile?.name || "unknown.xml",
         sourceType: inputType || "xml",
@@ -158,16 +169,63 @@ export default function ConvertPage() {
     }
   };
 
-  const isAirflow3 = airflowVersion.startsWith("3");
+  const canProceed = () => {
+    switch (step) {
+      case "upload":
+        return !!inputContent && !!inputType;
+      case "select":
+        return selectedJobs.length > 0;
+      case "configure":
+        return true;
+      case "review":
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  const handleNext = async () => {
+    switch (step) {
+      case "upload":
+        await handleParse();
+        break;
+      case "select":
+        setStep("configure");
+        break;
+      case "configure":
+        setStep("review");
+        break;
+      case "review":
+        await handleConvert();
+        break;
+    }
+  };
+
+  const handleBack = () => {
+    switch (step) {
+      case "select":
+        setStep("upload");
+        break;
+      case "configure":
+        setStep("select");
+        break;
+      case "review":
+        setStep("configure");
+        break;
+      case "result":
+        setStep("review");
+        break;
+    }
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Convert</h1>
           <p className="text-muted-foreground">
-            Upload and convert Control-M jobs to Airflow DAGs
+            Convert Control-M jobs to Airflow DAGs
           </p>
         </div>
         <Button variant="outline" onClick={reset}>
@@ -177,34 +235,44 @@ export default function ConvertPage() {
       </div>
 
       {/* Progress Steps */}
-      <div className="flex items-center gap-4">
-        <StepIndicator
-          number={1}
-          label="Upload"
-          active={step === "upload"}
-          completed={step !== "upload"}
-        />
-        <div className="flex-1 h-px bg-border" />
-        <StepIndicator
-          number={2}
-          label="Preview"
-          active={step === "preview"}
-          completed={step === "convert" || step === "result"}
-        />
-        <div className="flex-1 h-px bg-border" />
-        <StepIndicator
-          number={3}
-          label="Convert"
-          active={step === "convert"}
-          completed={step === "result"}
-        />
-        <div className="flex-1 h-px bg-border" />
-        <StepIndicator
-          number={4}
-          label="Result"
-          active={step === "result"}
-          completed={false}
-        />
+      <div className="flex items-center justify-between">
+        {STEPS.map((s, index) => {
+          const Icon = s.icon;
+          const isActive = s.id === step;
+          const isCompleted = index < currentStepIndex;
+
+          return (
+            <div key={s.id} className="flex items-center">
+              <div className="flex flex-col items-center">
+                <div
+                  className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+                    isActive
+                      ? "bg-primary text-primary-foreground"
+                      : isCompleted
+                        ? "bg-primary/20 text-primary"
+                        : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  <Icon className="h-5 w-5" />
+                </div>
+                <span
+                  className={`mt-2 text-xs ${
+                    isActive ? "font-medium text-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  {s.label}
+                </span>
+              </div>
+              {index < STEPS.length - 1 && (
+                <div
+                  className={`h-px w-16 mx-2 ${
+                    index < currentStepIndex ? "bg-primary" : "bg-border"
+                  }`}
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Error Display */}
@@ -214,195 +282,216 @@ export default function ConvertPage() {
         </div>
       )}
 
-      {/* Main Content */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Left Panel */}
-        <div className="space-y-6">
-          {/* File Upload */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">1. Upload Control-M File</CardTitle>
-            </CardHeader>
-            <CardContent>
+      {/* Step Content */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            {(() => {
+              const CurrentIcon = STEPS[currentStepIndex]?.icon || Upload;
+              return <CurrentIcon className="h-5 w-5" />;
+            })()}
+            Step {currentStepIndex + 1}: {STEPS[currentStepIndex]?.label}
+          </CardTitle>
+          <CardDescription>
+            {STEPS[currentStepIndex]?.description}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* Step 1: Upload */}
+          {step === "upload" && (
+            <div className="space-y-4">
               <FileUploader />
-              {step === "preview" && (
-                <Button
-                  className="w-full mt-4"
-                  onClick={handleParse}
-                  disabled={isProcessing}
-                >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Parsing...
-                    </>
-                  ) : (
-                    <>
-                      Parse File
-                      <ArrowRight className="h-4 w-4 ml-2" />
-                    </>
-                  )}
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Job Selection */}
-          {(step === "convert" || step === "result") && <JobPreview />}
-        </div>
-
-        {/* Right Panel */}
-        <div className="space-y-6">
-          {/* Template & Version Selection */}
-          {(step === "convert" || step === "result") && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Settings2 className="h-5 w-5" />
-                  2. Configure Output
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Airflow Version */}
-                <div className="space-y-2">
-                  <Label>Airflow Version</Label>
-                  <Select
-                    value={airflowVersion}
-                    onValueChange={(v) => setAirflowVersion(v as AirflowVersion)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="2.5">Airflow 2.5.x</SelectItem>
-                      <SelectItem value="2.6">Airflow 2.6.x</SelectItem>
-                      <SelectItem value="2.7">Airflow 2.7.x</SelectItem>
-                      <SelectItem value="2.8">Airflow 2.8.x</SelectItem>
-                      <SelectItem value="2.9">Airflow 2.9.x</SelectItem>
-                      <SelectItem value="2.10">Airflow 2.10.x</SelectItem>
-                      <SelectItem value="3.0">Airflow 3.0.x</SelectItem>
-                      <SelectItem value="3.1">Airflow 3.1.x (Latest)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* DAG Divider Strategy */}
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <Layers className="h-4 w-4" />
-                    DAG Grouping Strategy
-                  </Label>
-                  <Select
-                    value={divideStrategy}
-                    onValueChange={(v) => setDivideStrategy(v as DivideStrategy)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {dividerStrategies.map((strategy) => (
-                        <SelectItem key={strategy.value} value={strategy.value}>
-                          <div className="flex flex-col">
-                            <span>{strategy.label}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {strategy.description}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Template Selection */}
-                <div className="space-y-2">
-                  <Label>Template</Label>
-                  <Select
-                    value={selectedTemplate}
-                    onValueChange={setSelectedTemplate}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a template" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">Default Template</SelectItem>
-                      <SelectItem value="bash">Bash Operator Only</SelectItem>
-                      <SelectItem value="python">Python Operator</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* TaskFlow API Option (Airflow 3.x only) */}
-                {isAirflow3 && (
-                  <div className="flex items-center gap-2 pt-2">
-                    <input
-                      type="checkbox"
-                      id="taskflow"
-                      checked={useTaskFlowApi}
-                      onChange={(e) => setUseTaskFlowApi(e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-300"
-                    />
-                    <Label htmlFor="taskflow" className="font-normal cursor-pointer">
-                      Use TaskFlow API (@dag decorator)
-                    </Label>
-                  </div>
-                )}
-
-                {/* Airflow 3.x Info */}
-                {isAirflow3 && (
-                  <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
-                    <Info className="h-4 w-4 mt-0.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                    <p className="text-xs text-blue-800 dark:text-blue-200">
-                      Airflow 3.x uses new import paths from{" "}
-                      <code className="px-1 bg-blue-100 dark:bg-blue-900 rounded">
-                        airflow.providers.standard
-                      </code>{" "}
-                      and{" "}
-                      <code className="px-1 bg-blue-100 dark:bg-blue-900 rounded">
-                        airflow.sdk
-                      </code>
+              {inputFile && (
+                <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                  <FileCode className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="font-medium">{inputFile.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {(inputFile.size / 1024).toFixed(1)} KB
                     </p>
                   </div>
-                )}
-
-                <Button
-                  className="w-full"
-                  onClick={handleConvert}
-                  disabled={isProcessing || selectedJobs.length === 0}
-                >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Converting...
-                    </>
-                  ) : (
-                    <>
-                      Convert {selectedJobs.length} Jobs
-                      <ArrowRight className="h-4 w-4 ml-2" />
-                    </>
-                  )}
-                </Button>
-
-                <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                  <Badge variant="outline">Airflow {airflowVersion}</Badge>
-                  {isAirflow3 && useTaskFlowApi && (
-                    <Badge variant="secondary">TaskFlow API</Badge>
-                  )}
-                  <Badge variant="outline" className="capitalize">
-                    {divideStrategy}
-                  </Badge>
                 </div>
-              </CardContent>
-            </Card>
+              )}
+            </div>
           )}
 
-          {/* Output */}
-          {step === "result" && (
-            <OutputViewer
-              onShowReport={() => setShowReportDialog(true)}
-            />
+          {/* Step 2: Select Jobs */}
+          {step === "select" && (
+            <div className="space-y-4">
+              <JobPreview />
+            </div>
           )}
-        </div>
+
+          {/* Step 3: Configure */}
+          {step === "configure" && (
+            <div className="space-y-6">
+              {/* Airflow Version */}
+              <div className="space-y-2">
+                <Label>Airflow Version</Label>
+                <Select
+                  value={airflowVersion}
+                  onValueChange={(v) => setAirflowVersion(v as AirflowVersion)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2.5">Airflow 2.5.x</SelectItem>
+                    <SelectItem value="2.6">Airflow 2.6.x</SelectItem>
+                    <SelectItem value="2.7">Airflow 2.7.x</SelectItem>
+                    <SelectItem value="2.8">Airflow 2.8.x</SelectItem>
+                    <SelectItem value="2.9">Airflow 2.9.x</SelectItem>
+                    <SelectItem value="2.10">Airflow 2.10.x</SelectItem>
+                    <SelectItem value="3.0">Airflow 3.0.x</SelectItem>
+                    <SelectItem value="3.1">Airflow 3.1.x (Latest)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* DAG Grouping Strategy */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Layers className="h-4 w-4" />
+                  DAG Grouping Strategy
+                </Label>
+                <Select
+                  value={divideStrategy}
+                  onValueChange={(v) => setDivideStrategy(v as DivideStrategy)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {dividerStrategies.map((strategy) => (
+                      <SelectItem key={strategy.value} value={strategy.value}>
+                        <div className="flex flex-col">
+                          <span>{strategy.label}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {strategy.description}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* TaskFlow API Option */}
+              {isAirflow3 && (
+                <div className="flex items-center gap-2 p-4 border rounded-lg">
+                  <input
+                    type="checkbox"
+                    id="taskflow"
+                    checked={useTaskFlowApi}
+                    onChange={(e) => setUseTaskFlowApi(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <Label htmlFor="taskflow" className="font-normal cursor-pointer">
+                    Use TaskFlow API (@dag decorator)
+                  </Label>
+                </div>
+              )}
+
+              {/* Airflow 3.x Info */}
+              {isAirflow3 && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
+                  <Info className="h-4 w-4 mt-0.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <p className="text-xs text-blue-800 dark:text-blue-200">
+                    Airflow 3.x uses new import paths from{" "}
+                    <code className="px-1 bg-blue-100 dark:bg-blue-900 rounded">
+                      airflow.providers.standard
+                    </code>{" "}
+                    and{" "}
+                    <code className="px-1 bg-blue-100 dark:bg-blue-900 rounded">
+                      airflow.sdk
+                    </code>
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 4: Review */}
+          {step === "review" && (
+            <div className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="p-4 border rounded-lg">
+                  <p className="text-sm text-muted-foreground">Source File</p>
+                  <p className="font-medium">{inputFile?.name || "N/A"}</p>
+                </div>
+                <div className="p-4 border rounded-lg">
+                  <p className="text-sm text-muted-foreground">Jobs Selected</p>
+                  <p className="font-medium">{selectedJobs.length} jobs</p>
+                </div>
+                <div className="p-4 border rounded-lg">
+                  <p className="text-sm text-muted-foreground">Airflow Version</p>
+                  <p className="font-medium">Airflow {airflowVersion}</p>
+                </div>
+                <div className="p-4 border rounded-lg">
+                  <p className="text-sm text-muted-foreground">Grouping Strategy</p>
+                  <p className="font-medium capitalize">{divideStrategy}</p>
+                </div>
+              </div>
+
+              {isAirflow3 && useTaskFlowApi && (
+                <div className="p-4 border rounded-lg bg-muted/50">
+                  <Badge variant="secondary">TaskFlow API enabled</Badge>
+                </div>
+              )}
+
+              <div className="p-4 border-2 border-dashed rounded-lg text-center">
+                <CheckCircle2 className="h-8 w-8 mx-auto text-primary mb-2" />
+                <p className="font-medium">Ready to Convert</p>
+                <p className="text-sm text-muted-foreground">
+                  Click &quot;Convert&quot; to generate {selectedJobs.length} Airflow tasks
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: Result */}
+          {step === "result" && (
+            <div className="space-y-4">
+              <OutputViewer onShowReport={() => setShowReportDialog(true)} />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Navigation Buttons */}
+      <div className="flex items-center justify-between">
+        <Button
+          variant="outline"
+          onClick={handleBack}
+          disabled={step === "upload" || isProcessing}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back
+        </Button>
+
+        {step !== "result" ? (
+          <Button
+            onClick={handleNext}
+            disabled={!canProceed() || isProcessing}
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                {step === "upload" ? "Parsing..." : "Converting..."}
+              </>
+            ) : (
+              <>
+                {step === "review" ? "Convert" : "Next"}
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </>
+            )}
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={() => setShowReportDialog(true)}>
+            <BarChart3 className="h-4 w-4 mr-2" />
+            View Report
+          </Button>
+        )}
       </div>
 
       {/* Conversion Report Dialog */}
@@ -422,41 +511,6 @@ export default function ConvertPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-function StepIndicator({
-  number,
-  label,
-  active,
-  completed,
-}: {
-  number: number;
-  label: string;
-  active: boolean;
-  completed: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <div
-        className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium transition-colors ${
-          active
-            ? "bg-primary text-primary-foreground"
-            : completed
-              ? "bg-primary/20 text-primary"
-              : "bg-muted text-muted-foreground"
-        }`}
-      >
-        {number}
-      </div>
-      <span
-        className={`text-sm ${
-          active ? "font-medium" : "text-muted-foreground"
-        }`}
-      >
-        {label}
-      </span>
     </div>
   );
 }
