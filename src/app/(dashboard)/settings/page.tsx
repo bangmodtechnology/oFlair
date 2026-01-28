@@ -11,16 +11,9 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Save, RotateCcw, HardDrive, Code, Settings2, Check } from "lucide-react";
+import { Save, RotateCcw, HardDrive, Code, Settings2, Check, Info } from "lucide-react";
 import { toast } from "sonner";
 import {
   loadConfig,
@@ -136,30 +129,6 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="schedule">Default Schedule</Label>
-                <Select
-                  value={settings.defaultSchedule}
-                  onValueChange={(value) =>
-                    setSettings({ ...settings, defaultSchedule: value })
-                  }
-                >
-                  <SelectTrigger id="schedule">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="None">None (Manual)</SelectItem>
-                    <SelectItem value="@once">@once</SelectItem>
-                    <SelectItem value="@hourly">@hourly</SelectItem>
-                    <SelectItem value="@daily">@daily</SelectItem>
-                    <SelectItem value="@weekly">@weekly</SelectItem>
-                    <SelectItem value="@monthly">@monthly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
                 <Label htmlFor="retries">Default Retries</Label>
                 <Input
                   id="retries"
@@ -175,37 +144,23 @@ export default function SettingsPage() {
                   }
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="retryDelay">Retry Delay (minutes)</Label>
-                <Input
-                  id="retryDelay"
-                  type="number"
-                  min={1}
-                  max={60}
-                  value={settings.defaultRetryDelay}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      defaultRetryDelay: parseInt(e.target.value) || 5,
-                    })
-                  }
-                />
-              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="catchup"
-                checked={settings.catchup}
+            <div className="space-y-2">
+              <Label htmlFor="retryDelay">Retry Delay (minutes)</Label>
+              <Input
+                id="retryDelay"
+                type="number"
+                min={1}
+                max={60}
+                value={settings.defaultRetryDelay}
                 onChange={(e) =>
-                  setSettings({ ...settings, catchup: e.target.checked })
+                  setSettings({
+                    ...settings,
+                    defaultRetryDelay: parseInt(e.target.value) || 5,
+                  })
                 }
-                className="h-4 w-4 rounded border-gray-300"
               />
-              <Label htmlFor="catchup" className="font-normal">
-                Enable catchup for scheduled DAGs
-              </Label>
             </div>
           </CardContent>
         </Card>
@@ -218,7 +173,7 @@ export default function SettingsPage() {
               Naming Conventions
             </CardTitle>
             <CardDescription>
-              Configure how IDs and names are generated
+              Configure how DAG IDs are generated
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -247,152 +202,50 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="taskIdCase">Task ID Case</Label>
-              <Select
-                value={settings.taskIdCase}
-                onValueChange={(value: "lowercase" | "original") =>
-                  setSettings({ ...settings, taskIdCase: value })
-                }
-              >
-                <SelectTrigger id="taskIdCase">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="lowercase">lowercase</SelectItem>
-                  <SelectItem value="original">Keep Original</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
             <Separator />
 
             <div className="space-y-2">
               <Label>Preview</Label>
               <div className="p-3 rounded-lg bg-muted font-mono text-sm">
                 <p>DAG ID: {settings.dagIdPrefix}folder_name{settings.dagIdSuffix}</p>
-                <p>Task ID: job_name_task</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Output Format */}
+        {/* Output Options */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Code className="h-5 w-5" />
-              Output Format
+              Output Options
             </CardTitle>
             <CardDescription>
-              Configure the generated Python code format
+              Configure the generated Python code
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="pythonVersion">Python Version</Label>
-                <Select
-                  value={settings.pythonVersion}
-                  onValueChange={(value) =>
-                    setSettings({ ...settings, pythonVersion: value })
-                  }
-                >
-                  <SelectTrigger id="pythonVersion">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="3.8">Python 3.8</SelectItem>
-                    <SelectItem value="3.9">Python 3.9</SelectItem>
-                    <SelectItem value="3.10">Python 3.10</SelectItem>
-                    <SelectItem value="3.11">Python 3.11</SelectItem>
-                    <SelectItem value="3.12">Python 3.12</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="airflowVersion">Airflow Version</Label>
-                <Select
-                  value={settings.airflowVersion}
-                  onValueChange={(value) =>
-                    setSettings({ ...settings, airflowVersion: value })
-                  }
-                >
-                  <SelectTrigger id="airflowVersion">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="2.5">Airflow 2.5.x</SelectItem>
-                    <SelectItem value="2.6">Airflow 2.6.x</SelectItem>
-                    <SelectItem value="2.7">Airflow 2.7.x</SelectItem>
-                    <SelectItem value="2.8">Airflow 2.8.x</SelectItem>
-                    <SelectItem value="2.9">Airflow 2.9.x</SelectItem>
-                    <SelectItem value="2.10">Airflow 2.10.x</SelectItem>
-                    <SelectItem value="3.0">Airflow 3.0.x</SelectItem>
-                    <SelectItem value="3.1">Airflow 3.1.x (Latest)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="comments"
+                checked={settings.includeComments}
+                onChange={(e) =>
+                  setSettings({ ...settings, includeComments: e.target.checked })
+                }
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="comments" className="font-normal">
+                Include comments in generated code
+              </Label>
             </div>
 
-            <Separator />
-
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="taskflow"
-                  checked={settings.useTaskFlowApi}
-                  onChange={(e) =>
-                    setSettings({ ...settings, useTaskFlowApi: e.target.checked })
-                  }
-                  className="h-4 w-4 rounded border-gray-300"
-                />
-                <Label htmlFor="taskflow" className="font-normal">
-                  Use TaskFlow API (@dag decorator) - Airflow 3.x style
-                </Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="comments"
-                  checked={settings.includeComments}
-                  onChange={(e) =>
-                    setSettings({ ...settings, includeComments: e.target.checked })
-                  }
-                  className="h-4 w-4 rounded border-gray-300"
-                />
-                <Label htmlFor="comments" className="font-normal">
-                  Include inline comments in generated code
-                </Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="docstrings"
-                  checked={settings.includeDocstrings}
-                  onChange={(e) =>
-                    setSettings({ ...settings, includeDocstrings: e.target.checked })
-                  }
-                  className="h-4 w-4 rounded border-gray-300"
-                />
-                <Label htmlFor="docstrings" className="font-normal">
-                  Include docstrings at the top of each DAG file
-                </Label>
-              </div>
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
+              <Info className="h-4 w-4 mt-0.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                Airflow version and TaskFlow API options are configured during conversion in the Convert page.
+              </p>
             </div>
-
-            {settings.airflowVersion.startsWith("3") && (
-              <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
-                <p className="text-sm text-blue-800 dark:text-blue-200">
-                  <strong>Airflow 3.x Note:</strong> Operators are imported from
-                  <code className="mx-1 px-1 bg-blue-100 dark:bg-blue-900 rounded">
-                    airflow.providers.standard
-                  </code>
-                  and uses the new SDK imports.
-                </p>
-              </div>
-            )}
           </CardContent>
         </Card>
 

@@ -6,20 +6,13 @@ export interface AppConfig {
   defaultOwner: string;
   defaultRetries: number;
   defaultRetryDelay: number;
-  defaultSchedule: string;
-  catchup: boolean;
 
   // Naming conventions
   dagIdPrefix: string;
   dagIdSuffix: string;
-  taskIdCase: "lowercase" | "original";
 
-  // Output format
-  pythonVersion: string;
-  airflowVersion: string;
-  useTaskFlowApi: boolean;
+  // Output options
   includeComments: boolean;
-  includeDocstrings: boolean;
 }
 
 export interface ConversionHistoryItem {
@@ -43,16 +36,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   defaultOwner: "airflow",
   defaultRetries: 1,
   defaultRetryDelay: 5,
-  defaultSchedule: "None",
-  catchup: false,
   dagIdPrefix: "",
   dagIdSuffix: "_dag",
-  taskIdCase: "lowercase",
-  pythonVersion: "3.9",
-  airflowVersion: "3.1",
-  useTaskFlowApi: false,
   includeComments: true,
-  includeDocstrings: true,
 };
 
 // Config functions
