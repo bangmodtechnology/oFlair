@@ -7,7 +7,7 @@
 import type { ControlMJob, ControlMDefinition } from "@/types/controlm";
 import type { AirflowDAG, AirflowTask, AirflowDependency, GeneratedDAG } from "@/types/airflow";
 import type { ConversionTemplate } from "@/types/template";
-import type { CustomRule } from "@/lib/storage/config-storage";
+import type { CustomRule, CalendarEntry } from "@/lib/storage/config-storage";
 import { Rules, RULE_CHAINS } from "./rules";
 import { divideJobs, type DivideOptions, type DividedGroup } from "./dag-divider";
 import { convertSchedule, type ControlMSchedule, cronToHuman } from "./schedule-converter";
@@ -15,6 +15,7 @@ import { generateReport, type ConversionReport } from "./report";
 import { convertJobWithTemplate } from "../templates/template-matcher";
 import { loadAllTemplates } from "../templates/template-loader";
 import { applyCustomRules } from "./custom-rules-engine";
+import { generateEmbeddedTimetable, generateTimetableImports, getCalendarDescription } from "./timetable-generator";
 
 // Re-export types and utilities
 export { Rules, RULE_CHAINS } from "./rules";
@@ -23,6 +24,7 @@ export { convertSchedule, cronToHuman, validateCron, type ControlMSchedule, type
 export { generateReport, formatReportAsText, formatReportAsJson, type ConversionReport, type ConversionWarning } from "./report";
 export { validateDAG, validateGeneratedDAG, validateAllDAGs, type ValidationResult, type ValidationError } from "./validator";
 export { applyCustomRules, validateCustomRule, getSampleCustomRules } from "./custom-rules-engine";
+export { generateEmbeddedTimetable, generateTimetableImports, getCalendarDescription } from "./timetable-generator";
 
 /**
  * Airflow version type
@@ -44,6 +46,7 @@ export interface ConversionOptions {
   includeComments?: boolean;
   timezone?: string;
   customRules?: CustomRule[];
+  calendars?: CalendarEntry[];
 }
 
 /**
@@ -74,6 +77,7 @@ export async function convertControlMToAirflow(
     includeComments = true,
     timezone = "UTC",
     customRules = [],
+    calendars = [],
   } = options;
 
   // Step 0: Apply custom rules to jobs (if any)
@@ -107,6 +111,7 @@ export async function convertControlMToAirflow(
       dagIdSuffix,
       includeComments,
       timezone,
+      calendars,
     }, crossDagMap);
     dags.push(dag);
   }
@@ -200,7 +205,7 @@ function findCrossDagDependencies(
  */
 function convertGroupToDag(
   group: DividedGroup,
-  options: Omit<ConversionOptions, "divideStrategy">,
+  options: Omit<ConversionOptions, "divideStrategy" | "customRules">,
   crossDagMap?: CrossDagMap
 ): GeneratedDAG {
   const {
@@ -213,6 +218,7 @@ function convertGroupToDag(
     dagIdSuffix,
     includeComments,
     timezone,
+    calendars = [],
   } = options;
 
   // Generate DAG ID
@@ -287,6 +293,7 @@ function convertGroupToDag(
     includeComments: includeComments!,
     scheduleNotes: schedule.notes,
     timezone: timezone!,
+    calendars,
   });
 
   return {
@@ -424,9 +431,10 @@ function generateDagCode(
     includeComments: boolean;
     scheduleNotes: string[];
     timezone: string;
+    calendars?: CalendarEntry[];
   }
 ): string {
-  const { airflowVersion, useTaskFlowApi, includeComments, scheduleNotes, timezone } = options;
+  const { airflowVersion, useTaskFlowApi, includeComments, scheduleNotes, timezone, calendars = [] } = options;
   const isV3 = airflowVersion.startsWith("3");
   const lines: string[] = [];
 
@@ -536,6 +544,35 @@ function generateDagCode(
     lines.push("");
   }
 
+  // Check if we should use Timetable (when calendars are provided)
+  const useTimetable = calendars.length > 0;
+
+  // Add Timetable imports if calendars are configured
+  if (useTimetable) {
+    const timetableImports = generateTimetableImports();
+    for (const imp of timetableImports) {
+      lines.push(imp);
+    }
+    lines.push("");
+  }
+
+  // Calendar notes as comments
+  if (includeComments && calendars.length > 0) {
+    const calendarDesc = getCalendarDescription(calendars);
+    lines.push("# Calendar-based scheduling enabled via Airflow Timetable:");
+    for (const desc of calendarDesc) {
+      lines.push(`# - ${desc}`);
+    }
+    lines.push("");
+  }
+
+  // Embed Timetable class if calendars are configured
+  if (useTimetable) {
+    lines.push(generateEmbeddedTimetable(calendars));
+    lines.push("");
+    lines.push("");
+  }
+
   // Default args
   lines.push("default_args = {");
   lines.push(`    'owner': '${dag.defaultArgs?.owner || "airflow"}',`);
@@ -553,7 +590,12 @@ function generateDagCode(
     lines.push(`    dag_id='${dag.dagId}',`);
     lines.push("    default_args=default_args,");
     lines.push(`    description='${Rules.escapeQuotes(dag.description || "")}',`);
-    lines.push(`    schedule=${dag.schedule === "None" ? "None" : `'${dag.schedule}'`},`);
+    // Use timetable= when calendars are configured, otherwise use schedule=
+    if (useTimetable) {
+      lines.push(`    timetable=OFlairCalendarTimetable(),`);
+    } else {
+      lines.push(`    schedule=${dag.schedule === "None" ? "None" : `'${dag.schedule}'`},`);
+    }
     lines.push("    start_date=datetime(2024, 1, 1),");
     lines.push("    catchup=False,");
     lines.push(`    tags=${JSON.stringify(dag.tags || [])},`);
@@ -566,7 +608,12 @@ function generateDagCode(
     lines.push(`    dag_id='${dag.dagId}',`);
     lines.push("    default_args=default_args,");
     lines.push(`    description='${Rules.escapeQuotes(dag.description || "")}',`);
-    lines.push(`    schedule=${dag.schedule === "None" ? "None" : `'${dag.schedule}'`},`);
+    // Use timetable= when calendars are configured, otherwise use schedule=
+    if (useTimetable) {
+      lines.push(`    timetable=OFlairCalendarTimetable(),`);
+    } else {
+      lines.push(`    schedule=${dag.schedule === "None" ? "None" : `'${dag.schedule}'`},`);
+    }
     lines.push("    start_date=datetime(2024, 1, 1),");
     lines.push("    catchup=False,");
     lines.push(`    tags=${JSON.stringify(dag.tags || [])},`);

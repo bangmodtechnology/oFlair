@@ -55,9 +55,7 @@ import {
   type CustomRule,
   type CalendarEntry,
   loadCustomRules,
-  getActiveCustomRules,
   loadCalendars,
-  getActiveCalendars,
 } from "@/lib/storage/config-storage";
 import { useStorage } from "@/hooks/use-storage";
 import { toast } from "sonner";
@@ -103,10 +101,12 @@ export default function ConvertPage() {
   const [useTaskFlowApi, setUseTaskFlowApi] = useState(false);
   const [showReportDialog, setShowReportDialog] = useState(false);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
-  const [customRules, setCustomRules] = useState<CustomRule[]>([]);
-  const [calendars, setCalendars] = useState<CalendarEntry[]>([]);
-  const [useCustomRules, setUseCustomRules] = useState(true);
-  const [useCalendars, setUseCalendars] = useState(true);
+  // All available rules and calendars
+  const [allRules, setAllRules] = useState<CustomRule[]>([]);
+  const [allCalendars, setAllCalendars] = useState<CalendarEntry[]>([]);
+  // Selected rules and calendars for this conversion
+  const [selectedRuleIds, setSelectedRuleIds] = useState<Set<string>>(new Set());
+  const [selectedCalendarIds, setSelectedCalendarIds] = useState<Set<string>>(new Set());
   const [validationResults, setValidationResults] = useState<Map<string, ValidationResult> | null>(null);
   const storage = useStorage();
 
@@ -115,17 +115,48 @@ export default function ConvertPage() {
     (async () => {
       const config = await storage.getConfig();
       setAppConfig(config);
-      // Load custom rules and calendars from localStorage
-      const rules = getActiveCustomRules();
-      setCustomRules(rules);
-      const cals = getActiveCalendars();
-      setCalendars(cals);
+      // Load all custom rules and calendars from localStorage
+      const rules = loadCustomRules();
+      setAllRules(rules);
+      // Pre-select active rules
+      setSelectedRuleIds(new Set(rules.filter(r => r.isActive).map(r => r.id)));
+
+      const cals = loadCalendars();
+      setAllCalendars(cals);
+      // Pre-select active calendars
+      setSelectedCalendarIds(new Set(cals.filter(c => c.isActive).map(c => c.id)));
     })();
   }, [storage]);
 
-  // Computed values for active rules/calendars
-  const activeRulesCount = useCustomRules ? customRules.length : 0;
-  const activeCalendarsCount = useCalendars ? calendars.length : 0;
+  // Get selected rules and calendars
+  const selectedRules = allRules.filter(r => selectedRuleIds.has(r.id));
+  const selectedCalendars = allCalendars.filter(c => selectedCalendarIds.has(c.id));
+
+  // Toggle rule selection
+  const toggleRule = (id: string) => {
+    setSelectedRuleIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // Toggle calendar selection
+  const toggleCalendar = (id: string) => {
+    setSelectedCalendarIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   const dividerStrategies = getDividerStrategies();
   const currentStepIndex = STEPS.findIndex((s) => s.id === step);
@@ -212,8 +243,10 @@ export default function ConvertPage() {
         dagIdPrefix: appConfig?.dagIdPrefix,
         dagIdSuffix: appConfig?.dagIdSuffix,
         includeComments: appConfig?.includeComments ?? true,
-        // Apply custom rules (only if enabled)
-        customRules: useCustomRules ? customRules : [],
+        // Apply selected custom rules
+        customRules: selectedRules,
+        // Apply selected calendars
+        calendars: selectedCalendars,
       });
 
       setGeneratedDags(result.dags);
@@ -539,43 +572,41 @@ export default function ConvertPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 {/* Custom Rules */}
                 <div className="p-4 border rounded-lg space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-2">
-                      <Cog className="h-4 w-4" />
-                      Custom Rules
-                    </Label>
-                    <input
-                      type="checkbox"
-                      id="use-rules"
-                      checked={useCustomRules}
-                      onChange={(e) => setUseCustomRules(e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-300"
-                    />
-                  </div>
+                  <Label className="flex items-center gap-2">
+                    <Cog className="h-4 w-4" />
+                    Custom Rules
+                    {selectedRules.length > 0 && (
+                      <Badge variant="secondary" className="ml-auto">
+                        {selectedRules.length} selected
+                      </Badge>
+                    )}
+                  </Label>
                   <div className="text-sm">
-                    {customRules.length > 0 ? (
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground">
-                          {customRules.length} active rule(s)
-                        </p>
-                        <div className="flex flex-wrap gap-1">
-                          {customRules.slice(0, 3).map((rule) => (
-                            <Badge key={rule.id} variant="secondary" className="text-xs">
-                              {rule.name}
+                    {allRules.length > 0 ? (
+                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                        {allRules.map((rule) => (
+                          <label
+                            key={rule.id}
+                            className="flex items-center gap-2 p-2 rounded hover:bg-muted cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedRuleIds.has(rule.id)}
+                              onChange={() => toggleRule(rule.id)}
+                              className="h-4 w-4 rounded border-gray-300"
+                            />
+                            <span className="flex-1 truncate">{rule.name}</span>
+                            <Badge variant="outline" className="text-xs shrink-0">
+                              {rule.type.replace("_", " ")}
                             </Badge>
-                          ))}
-                          {customRules.length > 3 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{customRules.length - 3} more
-                            </Badge>
-                          )}
-                        </div>
+                          </label>
+                        ))}
                       </div>
                     ) : (
                       <p className="text-muted-foreground">
-                        No active rules.{" "}
+                        No rules configured.{" "}
                         <a href="/rules" className="text-primary hover:underline">
-                          Configure rules
+                          Create rules
                         </a>
                       </p>
                     )}
@@ -584,44 +615,47 @@ export default function ConvertPage() {
 
                 {/* Calendars */}
                 <div className="p-4 border rounded-lg space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-2">
-                      <CalendarDays className="h-4 w-4" />
-                      Calendars
-                    </Label>
-                    <input
-                      type="checkbox"
-                      id="use-calendars"
-                      checked={useCalendars}
-                      onChange={(e) => setUseCalendars(e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-300"
-                    />
-                  </div>
+                  <Label className="flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4" />
+                    Calendars
+                    {selectedCalendars.length > 0 && (
+                      <Badge variant="secondary" className="ml-auto">
+                        {selectedCalendars.length} selected
+                      </Badge>
+                    )}
+                  </Label>
                   <div className="text-sm">
-                    {calendars.length > 0 ? (
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground">
-                          {calendars.length} active calendar(s)
-                        </p>
-                        <div className="flex flex-wrap gap-1">
-                          {calendars.slice(0, 3).map((cal) => (
-                            <Badge key={cal.id} variant="secondary" className="text-xs">
-                              {cal.name}
+                    {allCalendars.length > 0 ? (
+                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                        {allCalendars.map((cal) => (
+                          <label
+                            key={cal.id}
+                            className="flex items-center gap-2 p-2 rounded hover:bg-muted cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedCalendarIds.has(cal.id)}
+                              onChange={() => toggleCalendar(cal.id)}
+                              className="h-4 w-4 rounded border-gray-300"
+                            />
+                            <span className="flex-1 truncate">{cal.name}</span>
+                            <Badge variant="outline" className="text-xs shrink-0">
+                              {cal.type.replace("_", " ")}
                             </Badge>
-                          ))}
-                          {calendars.length > 3 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{calendars.length - 3} more
-                            </Badge>
-                          )}
-                        </div>
+                          </label>
+                        ))}
                       </div>
                     ) : (
                       <p className="text-muted-foreground">
-                        No active calendars.{" "}
+                        No calendars configured.{" "}
                         <a href="/calendars" className="text-primary hover:underline">
-                          Configure calendars
+                          Create calendars
                         </a>
+                      </p>
+                    )}
+                    {selectedCalendars.length > 0 && (
+                      <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                        Airflow Timetable will be embedded in DAG for calendar-based scheduling
                       </p>
                     )}
                   </div>
@@ -712,33 +746,58 @@ export default function ConvertPage() {
               )}
 
               {/* Rules and Calendars */}
-              {(activeRulesCount > 0 || activeCalendarsCount > 0) && (
+              {(selectedRules.length > 0 || selectedCalendars.length > 0) && (
                 <div className="p-4 border rounded-lg bg-muted/30">
                   <p className="text-sm font-medium mb-2 flex items-center gap-2">
                     <Cog className="h-4 w-4" />
                     Custom Rules & Calendars
                   </p>
-                  <div className="grid gap-2 text-sm">
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <Cog className="h-3 w-3" /> Rules:
-                      </span>
-                      {activeRulesCount > 0 ? (
-                        <Badge variant="secondary">{activeRulesCount} active</Badge>
-                      ) : (
-                        <span className="text-muted-foreground">Disabled</span>
-                      )}
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <CalendarDays className="h-3 w-3" /> Calendars:
-                      </span>
-                      {activeCalendarsCount > 0 ? (
-                        <Badge variant="secondary">{activeCalendarsCount} active</Badge>
-                      ) : (
-                        <span className="text-muted-foreground">Disabled</span>
-                      )}
-                    </div>
+                  <div className="space-y-2 text-sm">
+                    {selectedRules.length > 0 && (
+                      <div>
+                        <span className="text-muted-foreground flex items-center gap-1 mb-1">
+                          <Cog className="h-3 w-3" /> Rules ({selectedRules.length}):
+                        </span>
+                        <div className="flex flex-wrap gap-1 ml-4">
+                          {selectedRules.map((rule) => (
+                            <Badge key={rule.id} variant="secondary" className="text-xs">
+                              {rule.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {selectedCalendars.length > 0 && (
+                      <div>
+                        <span className="text-muted-foreground flex items-center gap-1 mb-1">
+                          <CalendarDays className="h-3 w-3" /> Calendars ({selectedCalendars.length}):
+                        </span>
+                        <div className="flex flex-wrap gap-1 ml-4">
+                          {selectedCalendars.map((cal) => (
+                            <Badge key={cal.id} variant="secondary" className="text-xs">
+                              {cal.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Timetable Mode Indicator */}
+              {selectedCalendars.length > 0 && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800">
+                  <CalendarDays className="h-4 w-4 mt-0.5 text-green-600 dark:text-green-400 shrink-0" />
+                  <div className="text-xs text-green-800 dark:text-green-200">
+                    <p className="font-medium">Airflow Timetable Mode Enabled</p>
+                    <p className="mt-1">
+                      DAG will use embedded{" "}
+                      <code className="px-1 bg-green-100 dark:bg-green-900 rounded">
+                        OFlairCalendarTimetable
+                      </code>{" "}
+                      class for calendar-based scheduling instead of cron expression.
+                    </p>
                   </div>
                 </div>
               )}
