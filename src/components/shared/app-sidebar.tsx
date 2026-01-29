@@ -10,6 +10,8 @@ import {
   Github,
   BookOpen,
   History,
+  Cog,
+  CalendarDays,
 } from "lucide-react";
 import {
   Sidebar,
@@ -44,6 +46,16 @@ const menuItems = [
     title: "History",
     url: "/history",
     icon: History,
+  },
+  {
+    title: "Rules",
+    url: "/rules",
+    icon: Cog,
+  },
+  {
+    title: "Calendars",
+    url: "/calendars",
+    icon: CalendarDays,
   },
   {
     title: "Settings",

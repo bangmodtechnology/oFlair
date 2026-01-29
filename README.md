@@ -1,6 +1,6 @@
 # OFlair - Control-M to Airflow Converter
 
-![OFlair Banner](public/oflair-logo.svg)
+![OFlair Banner](public/logo.png)
 
 **OFlair** คือเครื่องมือสำหรับช่วยแปลง Job Definitions จาก **BMC Control-M** ไปเป็น **Apache Airflow DAGs** โดยอัตโนมัติ ช่วยลดเวลาและความผิดพลาดในการเขียนโค้ด Python ด้วยมือ รองรับการแปลงเงื่อนไข (Conditions) และ Schedule ที่ซับซ้อนให้กลายเป็น Airflow Standard
 

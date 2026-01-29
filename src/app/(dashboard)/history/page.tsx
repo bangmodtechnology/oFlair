@@ -27,6 +27,15 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
   History,
   Trash2,
   Eye,
@@ -35,15 +44,22 @@ import {
   CheckCircle,
   AlertCircle,
   Clock,
+  Download,
+  Code2,
+  Copy,
+  Package,
 } from "lucide-react";
 import { type ConversionHistoryItem } from "@/lib/storage/config-storage";
 import { useStorage } from "@/hooks/use-storage";
 import { toast } from "sonner";
+import JSZip from "jszip";
 
 export default function HistoryPage() {
   const [history, setHistory] = useState<ConversionHistoryItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<ConversionHistoryItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [codeViewItem, setCodeViewItem] = useState<ConversionHistoryItem | null>(null);
+  const [selectedDagIndex, setSelectedDagIndex] = useState(0);
   const storage = useStorage();
 
   useEffect(() => {
@@ -60,6 +76,55 @@ export default function HistoryPage() {
       setHistory([]);
       toast.success("Conversion history cleared");
     }
+  };
+
+  const handleDownloadDag = (filename: string, content: string) => {
+    const blob = new Blob([content], { type: "text/x-python" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`Downloaded ${filename}`);
+  };
+
+  const handleDownloadAllDags = async (item: ConversionHistoryItem) => {
+    if (!item.generatedDags || item.generatedDags.length === 0) {
+      toast.error("No DAG files available for download");
+      return;
+    }
+
+    if (item.generatedDags.length === 1) {
+      handleDownloadDag(item.generatedDags[0].filename, item.generatedDags[0].content);
+      return;
+    }
+
+    // Create ZIP for multiple files
+    const zip = new JSZip();
+    const folder = zip.folder("dags");
+
+    for (const dag of item.generatedDags) {
+      folder?.file(dag.filename, dag.content);
+    }
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `dags_${item.id}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`Downloaded ${item.generatedDags.length} DAG files as ZIP`);
+  };
+
+  const handleCopyCode = (content: string) => {
+    navigator.clipboard.writeText(content);
+    toast.success("Code copied to clipboard");
   };
 
   const getStatusIcon = (status: ConversionHistoryItem["status"]) => {
@@ -110,7 +175,7 @@ export default function HistoryPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Conversion History</h1>
           <p className="text-muted-foreground">
-            View past conversions and their results
+            View past conversions, download DAGs, and review results
           </p>
         </div>
         {history.length > 0 && (
@@ -172,7 +237,7 @@ export default function HistoryPage() {
         <CardHeader>
           <CardTitle>Recent Conversions</CardTitle>
           <CardDescription>
-            Click on a row to see detailed conversion information
+            View details, code, or download generated DAG files
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -192,7 +257,8 @@ export default function HistoryPage() {
                   <TableHead>Source File</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Jobs</TableHead>
-                  <TableHead>Airflow Version</TableHead>
+                  <TableHead>DAGs</TableHead>
+                  <TableHead>Airflow</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -206,94 +272,237 @@ export default function HistoryPage() {
                         {getStatusBadge(item.status)}
                       </div>
                     </TableCell>
-                    <TableCell className="font-medium max-w-[200px] truncate">
+                    <TableCell className="font-medium max-w-[150px] truncate">
                       {item.sourceFile}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="uppercase">
+                      <Badge variant="outline" className="uppercase text-xs">
                         {item.sourceType}
                       </Badge>
                     </TableCell>
                     <TableCell>{item.jobsConverted.length}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{item.airflowVersion}</Badge>
+                      {item.generatedDags?.length || 0}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell>
+                      <Badge variant="secondary" className="text-xs">{item.airflowVersion}</Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
                       {formatDate(item.timestamp)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Dialog>
-                        <DialogTrigger asChild>
+                      <div className="flex items-center justify-end gap-1">
+                        {/* View Details */}
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setSelectedItem(item)}
+                              title="View Details"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-2xl">
+                            <DialogHeader>
+                              <DialogTitle>Conversion Details</DialogTitle>
+                              <DialogDescription>
+                                {item.sourceFile} - {formatDate(item.timestamp)}
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                              <div className="grid grid-cols-3 gap-4">
+                                <div>
+                                  <p className="text-sm font-medium">Status</p>
+                                  <div className="mt-1">{getStatusBadge(item.status)}</div>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium">Source Type</p>
+                                  <Badge variant="outline" className="mt-1 uppercase">
+                                    {item.sourceType}
+                                  </Badge>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium">Airflow Version</p>
+                                  <Badge variant="secondary" className="mt-1">
+                                    {item.airflowVersion}
+                                  </Badge>
+                                </div>
+                              </div>
+
+                              <div>
+                                <p className="text-sm font-medium mb-2">
+                                  Converted Jobs ({item.jobsConverted.length})
+                                </p>
+                                <div className="border rounded-lg overflow-hidden max-h-[300px] overflow-y-auto">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Job Name</TableHead>
+                                        <TableHead>DAG ID</TableHead>
+                                        <TableHead>Operator</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {item.jobsConverted.map((job, idx) => (
+                                        <TableRow key={idx}>
+                                          <TableCell className="font-mono text-sm">
+                                            {job.jobName}
+                                          </TableCell>
+                                          <TableCell className="font-mono text-sm">
+                                            {job.dagId}
+                                          </TableCell>
+                                          <TableCell>
+                                            <Badge variant="outline">{job.operator}</Badge>
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </div>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+
+                        {/* View Code */}
+                        {item.generatedDags && item.generatedDags.length > 0 && (
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  setCodeViewItem(item);
+                                  setSelectedDagIndex(0);
+                                }}
+                                title="View Code"
+                              >
+                                <Code2 className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-4xl max-h-[90vh]">
+                              <DialogHeader>
+                                <DialogTitle className="flex items-center gap-2">
+                                  <Code2 className="h-5 w-5" />
+                                  Generated DAG Code
+                                </DialogTitle>
+                                <DialogDescription>
+                                  {item.sourceFile} - {item.generatedDags.length} DAG file(s)
+                                </DialogDescription>
+                              </DialogHeader>
+
+                              {item.generatedDags.length === 1 ? (
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium font-mono">
+                                      {item.generatedDags[0].filename}
+                                    </span>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleCopyCode(item.generatedDags![0].content)}
+                                      >
+                                        <Copy className="h-4 w-4 mr-1" />
+                                        Copy
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleDownloadDag(
+                                          item.generatedDags![0].filename,
+                                          item.generatedDags![0].content
+                                        )}
+                                      >
+                                        <Download className="h-4 w-4 mr-1" />
+                                        Download
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <ScrollArea className="h-[500px] border rounded-lg">
+                                    <pre className="p-4 text-sm font-mono whitespace-pre overflow-x-auto bg-muted/50">
+                                      {item.generatedDags[0].content}
+                                    </pre>
+                                  </ScrollArea>
+                                </div>
+                              ) : (
+                                <Tabs defaultValue="0" className="space-y-4">
+                                  <div className="flex items-center justify-between">
+                                    <TabsList>
+                                      {item.generatedDags.map((dag, idx) => (
+                                        <TabsTrigger key={idx} value={String(idx)} className="font-mono text-xs">
+                                          {dag.dagId}
+                                        </TabsTrigger>
+                                      ))}
+                                    </TabsList>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleDownloadAllDags(item)}
+                                    >
+                                      <Package className="h-4 w-4 mr-1" />
+                                      Download All (ZIP)
+                                    </Button>
+                                  </div>
+                                  {item.generatedDags.map((dag, idx) => (
+                                    <TabsContent key={idx} value={String(idx)} className="space-y-2">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium font-mono">
+                                          {dag.filename}
+                                        </span>
+                                        <div className="flex gap-2">
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleCopyCode(dag.content)}
+                                          >
+                                            <Copy className="h-4 w-4 mr-1" />
+                                            Copy
+                                          </Button>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleDownloadDag(dag.filename, dag.content)}
+                                          >
+                                            <Download className="h-4 w-4 mr-1" />
+                                            Download
+                                          </Button>
+                                        </div>
+                                      </div>
+                                      <ScrollArea className="h-[450px] border rounded-lg">
+                                        <pre className="p-4 text-sm font-mono whitespace-pre overflow-x-auto bg-muted/50">
+                                          {dag.content}
+                                        </pre>
+                                      </ScrollArea>
+                                    </TabsContent>
+                                  ))}
+                                </Tabs>
+                              )}
+                            </DialogContent>
+                          </Dialog>
+                        )}
+
+                        {/* Download Button */}
+                        {item.generatedDags && item.generatedDags.length > 0 && (
                           <Button
                             variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedItem(item)}
+                            size="icon"
+                            onClick={() => handleDownloadAllDags(item)}
+                            title={item.generatedDags.length > 1 ? "Download All (ZIP)" : "Download DAG"}
                           >
-                            <Eye className="h-4 w-4 mr-1" />
-                            View
+                            <Download className="h-4 w-4" />
                           </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-2xl">
-                          <DialogHeader>
-                            <DialogTitle>Conversion Details</DialogTitle>
-                            <DialogDescription>
-                              {item.sourceFile} - {formatDate(item.timestamp)}
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="space-y-4">
-                            <div className="grid grid-cols-3 gap-4">
-                              <div>
-                                <p className="text-sm font-medium">Status</p>
-                                <div className="mt-1">{getStatusBadge(item.status)}</div>
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium">Source Type</p>
-                                <Badge variant="outline" className="mt-1 uppercase">
-                                  {item.sourceType}
-                                </Badge>
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium">Airflow Version</p>
-                                <Badge variant="secondary" className="mt-1">
-                                  {item.airflowVersion}
-                                </Badge>
-                              </div>
-                            </div>
+                        )}
 
-                            <div>
-                              <p className="text-sm font-medium mb-2">
-                                Converted Jobs ({item.jobsConverted.length})
-                              </p>
-                              <div className="border rounded-lg overflow-hidden">
-                                <Table>
-                                  <TableHeader>
-                                    <TableRow>
-                                      <TableHead>Job Name</TableHead>
-                                      <TableHead>DAG ID</TableHead>
-                                      <TableHead>Operator</TableHead>
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {item.jobsConverted.map((job, idx) => (
-                                      <TableRow key={idx}>
-                                        <TableCell className="font-mono text-sm">
-                                          {job.jobName}
-                                        </TableCell>
-                                        <TableCell className="font-mono text-sm">
-                                          {job.dagId}
-                                        </TableCell>
-                                        <TableCell>
-                                          <Badge variant="outline">{job.operator}</Badge>
-                                        </TableCell>
-                                      </TableRow>
-                                    ))}
-                                  </TableBody>
-                                </Table>
-                              </div>
-                            </div>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                        {/* No DAGs indicator */}
+                        {(!item.generatedDags || item.generatedDags.length === 0) && (
+                          <span className="text-xs text-muted-foreground px-2">
+                            No DAGs
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

@@ -212,6 +212,269 @@ const BUILTIN_TEMPLATES: ConversionTemplate[] = [
     createdAt: new Date(),
     updatedAt: new Date(),
   },
+  // HTTP/REST Operator
+  {
+    id: "http-operator",
+    name: "HTTP/REST to SimpleHttpOperator",
+    description: "Converts Control-M HTTP/REST API jobs to Airflow SimpleHttpOperator",
+    isDefault: false,
+    isActive: true,
+    priority: 72,
+    conditions: [
+      { id: "c1", field: "JOB_TYPE", operator: "contains", value: "http" },
+      { id: "c2", field: "JOB_TYPE", operator: "contains", value: "rest" },
+      { id: "c3", field: "JOB_TYPE", operator: "contains", value: "api" },
+    ],
+    mappings: [
+      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
+      { id: "m2", source: "CMDLINE", target: "endpoint", required: true },
+    ],
+    outputTemplate: `{{task_id}} = SimpleHttpOperator(
+    task_id='{{task_id}}',
+    http_conn_id='http_default',
+    endpoint='{{endpoint}}',
+    method='GET',
+    dag=dag
+)`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  // SQL Operator
+  {
+    id: "sql-operator",
+    name: "Database to SQLExecuteQueryOperator",
+    description: "Converts Control-M database jobs to Airflow SQLExecuteQueryOperator",
+    isDefault: false,
+    isActive: true,
+    priority: 73,
+    conditions: [
+      { id: "c1", field: "JOB_TYPE", operator: "contains", value: "sql" },
+      { id: "c2", field: "JOB_TYPE", operator: "contains", value: "database" },
+      { id: "c3", field: "JOB_TYPE", operator: "equals", value: "Database" },
+    ],
+    mappings: [
+      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
+      { id: "m2", source: "CMDLINE", target: "sql", required: true },
+    ],
+    outputTemplate: `{{task_id}} = SQLExecuteQueryOperator(
+    task_id='{{task_id}}',
+    conn_id='default_conn',
+    sql='''{{sql}}''',
+    dag=dag
+)`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  // AWS Lambda
+  {
+    id: "aws-lambda-operator",
+    name: "Lambda to LambdaInvokeFunctionOperator",
+    description: "Converts Control-M AWS Lambda jobs to Airflow LambdaInvokeFunctionOperator",
+    isDefault: false,
+    isActive: true,
+    priority: 78,
+    conditions: [
+      { id: "c1", field: "JOB_TYPE", operator: "contains", value: "lambda" },
+      { id: "c2", field: "JOB_TYPE", operator: "contains", value: "aws_lambda" },
+      { id: "c3", field: "APPLICATION", operator: "contains", value: "Lambda" },
+    ],
+    mappings: [
+      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
+      { id: "m2", source: "CMDLINE", target: "function_name" },
+      { id: "m3", source: "FILENAME", target: "function_name" },
+    ],
+    outputTemplate: `{{task_id}} = LambdaInvokeFunctionOperator(
+    task_id='{{task_id}}',
+    function_name='{{function_name}}',
+    aws_conn_id='aws_default',
+    dag=dag
+)`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  // AWS S3
+  {
+    id: "aws-s3-operator",
+    name: "S3 to S3CopyObjectOperator",
+    description: "Converts Control-M AWS S3 jobs to Airflow S3CopyObjectOperator",
+    isDefault: false,
+    isActive: true,
+    priority: 77,
+    conditions: [
+      { id: "c1", field: "JOB_TYPE", operator: "contains", value: "s3" },
+      { id: "c2", field: "APPLICATION", operator: "contains", value: "S3" },
+    ],
+    mappings: [
+      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
+      { id: "m2", source: "FILENAME", target: "source_bucket_key", required: true },
+      { id: "m3", source: "HOST", target: "dest_bucket_key", defaultValue: "destination/" },
+    ],
+    outputTemplate: `{{task_id}} = S3CopyObjectOperator(
+    task_id='{{task_id}}',
+    source_bucket_key='{{source_bucket_key}}',
+    dest_bucket_key='{{dest_bucket_key}}',
+    aws_conn_id='aws_default',
+    dag=dag
+)`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  // AWS Glue
+  {
+    id: "aws-glue-operator",
+    name: "Glue to GlueJobOperator",
+    description: "Converts Control-M AWS Glue jobs to Airflow GlueJobOperator",
+    isDefault: false,
+    isActive: true,
+    priority: 76,
+    conditions: [
+      { id: "c1", field: "JOB_TYPE", operator: "contains", value: "glue" },
+      { id: "c2", field: "APPLICATION", operator: "contains", value: "Glue" },
+    ],
+    mappings: [
+      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
+      { id: "m2", source: "CMDLINE", target: "job_name" },
+      { id: "m3", source: "FILENAME", target: "job_name" },
+    ],
+    outputTemplate: `{{task_id}} = GlueJobOperator(
+    task_id='{{task_id}}',
+    job_name='{{job_name}}',
+    aws_conn_id='aws_default',
+    dag=dag
+)`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  // SAP HANA
+  {
+    id: "sap-hana-operator",
+    name: "SAP to SapHanaOperator",
+    description: "Converts Control-M SAP HANA jobs to Airflow SapHanaOperator",
+    isDefault: false,
+    isActive: true,
+    priority: 74,
+    conditions: [
+      { id: "c1", field: "JOB_TYPE", operator: "contains", value: "sap" },
+      { id: "c2", field: "JOB_TYPE", operator: "contains", value: "hana" },
+      { id: "c3", field: "APPLICATION", operator: "contains", value: "SAP" },
+    ],
+    mappings: [
+      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
+      { id: "m2", source: "CMDLINE", target: "sql", required: true },
+    ],
+    outputTemplate: `{{task_id}} = SapHanaOperator(
+    task_id='{{task_id}}',
+    sap_hana_conn_id='sap_hana_default',
+    sql='''{{sql}}''',
+    dag=dag
+)`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  // Informatica
+  {
+    id: "informatica-operator",
+    name: "Informatica to InformaticaCloudRunTaskOperator",
+    description: "Converts Control-M Informatica jobs to Airflow InformaticaCloudRunTaskOperator",
+    isDefault: false,
+    isActive: true,
+    priority: 74,
+    conditions: [
+      { id: "c1", field: "JOB_TYPE", operator: "contains", value: "informatica" },
+      { id: "c2", field: "APPLICATION", operator: "contains", value: "Informatica" },
+    ],
+    mappings: [
+      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
+      { id: "m2", source: "CMDLINE", target: "task_name" },
+      { id: "m3", source: "FILENAME", target: "task_name" },
+    ],
+    outputTemplate: `{{task_id}} = InformaticaCloudRunTaskOperator(
+    task_id='{{task_id}}',
+    task_name='{{task_name}}',
+    informatica_conn_id='informatica_default',
+    dag=dag
+)`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  // Spark Submit
+  {
+    id: "spark-operator",
+    name: "Spark to SparkSubmitOperator",
+    description: "Converts Control-M Spark jobs to Airflow SparkSubmitOperator",
+    isDefault: false,
+    isActive: true,
+    priority: 79,
+    conditions: [
+      { id: "c1", field: "JOB_TYPE", operator: "contains", value: "spark" },
+      { id: "c2", field: "APPLICATION", operator: "contains", value: "Spark" },
+    ],
+    mappings: [
+      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
+      { id: "m2", source: "FILENAME", target: "application", required: true },
+    ],
+    outputTemplate: `{{task_id}} = SparkSubmitOperator(
+    task_id='{{task_id}}',
+    application='{{application}}',
+    conn_id='spark_default',
+    dag=dag
+)`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  // Databricks
+  {
+    id: "databricks-operator",
+    name: "Databricks to DatabricksSubmitRunOperator",
+    description: "Converts Control-M Databricks jobs to Airflow DatabricksSubmitRunOperator",
+    isDefault: false,
+    isActive: true,
+    priority: 79,
+    conditions: [
+      { id: "c1", field: "JOB_TYPE", operator: "contains", value: "databricks" },
+      { id: "c2", field: "APPLICATION", operator: "contains", value: "Databricks" },
+    ],
+    mappings: [
+      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
+      { id: "m2", source: "FILENAME", target: "notebook_path", defaultValue: "/Workspace/notebook" },
+    ],
+    outputTemplate: `{{task_id}} = DatabricksSubmitRunOperator(
+    task_id='{{task_id}}',
+    notebook_task={'notebook_path': '{{notebook_path}}'},
+    databricks_conn_id='databricks_default',
+    dag=dag
+)`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  // SFTP
+  {
+    id: "sftp-operator",
+    name: "SFTP to SFTPOperator",
+    description: "Converts Control-M SFTP/FTP jobs to Airflow SFTPOperator",
+    isDefault: false,
+    isActive: true,
+    priority: 71,
+    conditions: [
+      { id: "c1", field: "JOB_TYPE", operator: "contains", value: "sftp" },
+      { id: "c2", field: "JOB_TYPE", operator: "contains", value: "ftp" },
+    ],
+    mappings: [
+      { id: "m1", source: "JOBNAME", target: "task_id", transform: "lowercase" },
+      { id: "m2", source: "FILENAME", target: "local_filepath", required: true },
+      { id: "m3", source: "HOST", target: "remote_filepath", defaultValue: "/remote/path" },
+    ],
+    outputTemplate: `{{task_id}} = SFTPOperator(
+    task_id='{{task_id}}',
+    ssh_conn_id='sftp_default',
+    local_filepath='{{local_filepath}}',
+    remote_filepath='{{remote_filepath}}',
+    operation='put',
+    dag=dag
+)`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
 ];
 
 const CUSTOM_TEMPLATES_KEY = "oflair_custom_templates";

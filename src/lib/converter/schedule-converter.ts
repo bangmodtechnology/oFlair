@@ -27,6 +27,19 @@ export interface AirflowSchedule {
   catchup: boolean;
   timezone?: string;
   notes: string[];          // Conversion notes/warnings
+  calendar?: CalendarConfig;  // Calendar configuration if DAYSCAL is used
+}
+
+/**
+ * Calendar configuration for custom scheduling
+ */
+export interface CalendarConfig {
+  name: string;
+  type: 'business_days' | 'holidays' | 'custom' | 'weekly_pattern';
+  timetableCode?: string;  // Generated Airflow Timetable class code
+  excludedDates?: string[];
+  includedDates?: string[];
+  pattern?: string;  // For weekly patterns like "MON-FRI"
 }
 
 /**
@@ -118,16 +131,23 @@ export function convertSchedule(ctmSchedule: ControlMSchedule): AirflowSchedule 
   }
 
   // Handle calendars
+  let calendar: CalendarConfig | undefined;
   if (ctmSchedule.DAYSCAL) {
-    notes.push(`DAYSCAL=${ctmSchedule.DAYSCAL} - calendar logic needs manual implementation`);
+    calendar = parseCalendar(ctmSchedule.DAYSCAL, ctmSchedule);
+    if (calendar.timetableCode) {
+      notes.push(`DAYSCAL=${ctmSchedule.DAYSCAL} - Timetable class generated (see calendar config)`);
+    } else {
+      notes.push(`DAYSCAL=${ctmSchedule.DAYSCAL} - calendar config generated (customize as needed)`);
+    }
   }
   if (ctmSchedule.CONFCAL) {
-    notes.push(`CONFCAL=${ctmSchedule.CONFCAL} - confirmation calendar needs manual review`);
+    notes.push(`CONFCAL=${ctmSchedule.CONFCAL} - confirmation calendar needs ShortCircuitOperator or BranchOperator`);
   }
 
   // Handle shift
   if (ctmSchedule.SHIFT) {
-    notes.push(`SHIFT=${ctmSchedule.SHIFT} - day shifting needs manual implementation`);
+    const shiftInfo = parseShift(ctmSchedule.SHIFT, ctmSchedule.SHIFTNUM);
+    notes.push(`SHIFT=${ctmSchedule.SHIFT}${ctmSchedule.SHIFTNUM ? ' SHIFTNUM=' + ctmSchedule.SHIFTNUM : ''} - ${shiftInfo}`);
   }
 
   // Default to daily if still no schedule
@@ -140,6 +160,7 @@ export function convertSchedule(ctmSchedule: ControlMSchedule): AirflowSchedule 
     scheduleInterval,
     catchup: ctmSchedule.RETRO === "Y",
     notes,
+    calendar,
   };
 }
 
@@ -328,4 +349,365 @@ export function validateCron(cron: string): { valid: boolean; error?: string } {
   }
 
   return { valid: true };
+}
+
+/**
+ * Parse Control-M calendar name and generate Airflow calendar config
+ */
+function parseCalendar(calendarName: string, schedule: ControlMSchedule): CalendarConfig {
+  const name = calendarName.toLowerCase();
+
+  // Detect common calendar types from name
+  if (name.includes('business') || name.includes('workday') || name.includes('weekday')) {
+    return {
+      name: calendarName,
+      type: 'business_days',
+      pattern: 'MON-FRI',
+      timetableCode: generateBusinessDaysTimetable(calendarName, schedule),
+    };
+  }
+
+  if (name.includes('holiday') || name.includes('exclude')) {
+    return {
+      name: calendarName,
+      type: 'holidays',
+      excludedDates: [],  // User should populate these
+      timetableCode: generateHolidaysTimetable(calendarName),
+    };
+  }
+
+  if (name.includes('weekly') || name.includes('mon') || name.includes('fri')) {
+    const pattern = detectWeeklyPattern(calendarName);
+    return {
+      name: calendarName,
+      type: 'weekly_pattern',
+      pattern,
+    };
+  }
+
+  // Default to custom calendar
+  return {
+    name: calendarName,
+    type: 'custom',
+    timetableCode: generateCustomTimetable(calendarName),
+  };
+}
+
+/**
+ * Detect weekly pattern from calendar name
+ */
+function detectWeeklyPattern(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower.includes('daily')) return 'MON-SUN';
+  if (lower.includes('weekday')) return 'MON-FRI';
+  if (lower.includes('weekend')) return 'SAT,SUN';
+  if (lower.includes('mwf')) return 'MON,WED,FRI';
+  if (lower.includes('tth')) return 'TUE,THU';
+  return 'MON-FRI';  // Default to business days
+}
+
+/**
+ * Generate Airflow Timetable class for business days
+ */
+function generateBusinessDaysTimetable(calendarName: string, schedule: ControlMSchedule): string {
+  const className = sanitizeClassName(calendarName);
+  const time = schedule.TIME || schedule.TIMEFROM || '0000';
+  const hour = time.substring(0, 2);
+  const minute = time.substring(2, 4);
+
+  return `
+# Calendar Timetable for ${calendarName}
+# Add this to your plugins/timetables.py or include in DAG file
+
+from datetime import datetime, timedelta
+from typing import Optional
+from pendulum import DateTime, Timezone
+from airflow.timetables.base import DagRunInfo, DataInterval, TimeRestriction, Timetable
+
+class ${className}Timetable(Timetable):
+    """
+    Custom timetable for ${calendarName} calendar.
+    Runs on business days (Monday-Friday) at ${hour}:${minute}.
+    Customize the is_business_day method for holidays.
+    """
+
+    def __init__(self, timezone: str = "UTC"):
+        self.timezone = Timezone(timezone)
+        self.run_time = timedelta(hours=${parseInt(hour)}, minutes=${parseInt(minute)})
+        # Add holiday dates here (format: 'YYYY-MM-DD')
+        self.holidays = set([
+            # '2024-12-25',  # Christmas
+            # '2024-01-01',  # New Year
+        ])
+
+    def is_business_day(self, dt: DateTime) -> bool:
+        """Check if date is a business day (weekday and not a holiday)"""
+        if dt.weekday() >= 5:  # Saturday=5, Sunday=6
+            return False
+        if dt.strftime('%Y-%m-%d') in self.holidays:
+            return False
+        return True
+
+    def next_business_day(self, dt: DateTime) -> DateTime:
+        """Find the next business day from given date"""
+        next_day = dt + timedelta(days=1)
+        while not self.is_business_day(next_day):
+            next_day = next_day + timedelta(days=1)
+        return next_day
+
+    def infer_manual_data_interval(self, run_after: DateTime) -> DataInterval:
+        start = run_after.in_timezone(self.timezone).start_of('day')
+        return DataInterval(start=start, end=start + timedelta(days=1))
+
+    def next_dagrun_info(
+        self,
+        *,
+        last_automated_data_interval: Optional[DataInterval],
+        restriction: TimeRestriction,
+    ) -> Optional[DagRunInfo]:
+        if last_automated_data_interval is None:
+            # First run
+            start = restriction.earliest
+            if start is None:
+                return None
+            start = start.in_timezone(self.timezone).start_of('day')
+        else:
+            start = last_automated_data_interval.end
+
+        # Find next business day
+        while not self.is_business_day(start):
+            start = start + timedelta(days=1)
+
+        end = start + timedelta(days=1)
+        run_time = start + self.run_time
+
+        if restriction.latest is not None and run_time > restriction.latest:
+            return None
+
+        return DagRunInfo(
+            run_after=run_time,
+            data_interval=DataInterval(start=start, end=end),
+        )
+
+# Usage in DAG:
+# from plugins.timetables import ${className}Timetable
+#
+# with DAG(
+#     dag_id='my_dag',
+#     timetable=${className}Timetable(timezone='UTC'),
+#     ...
+# ) as dag:
+`.trim();
+}
+
+/**
+ * Generate Airflow Timetable class for holiday exclusions
+ */
+function generateHolidaysTimetable(calendarName: string): string {
+  const className = sanitizeClassName(calendarName);
+
+  return `
+# Holiday-aware Timetable for ${calendarName}
+# Add this to your plugins/timetables.py
+
+from datetime import datetime, timedelta
+from typing import Optional, Set
+from pendulum import DateTime, Timezone
+from airflow.timetables.base import DagRunInfo, DataInterval, TimeRestriction, Timetable
+
+class ${className}Timetable(Timetable):
+    """
+    Timetable that excludes holidays defined in ${calendarName}.
+    Configure the holidays set below.
+    """
+
+    def __init__(self, timezone: str = "UTC"):
+        self.timezone = Timezone(timezone)
+        # Configure your holidays here (format: 'YYYY-MM-DD')
+        self.holidays: Set[str] = {
+            # '2024-01-01',  # New Year's Day
+            # '2024-12-25',  # Christmas Day
+            # Add more holidays as needed
+        }
+
+    def is_excluded(self, dt: DateTime) -> bool:
+        """Check if date should be excluded (is a holiday)"""
+        return dt.strftime('%Y-%m-%d') in self.holidays
+
+    def infer_manual_data_interval(self, run_after: DateTime) -> DataInterval:
+        start = run_after.in_timezone(self.timezone).start_of('day')
+        return DataInterval(start=start, end=start + timedelta(days=1))
+
+    def next_dagrun_info(
+        self,
+        *,
+        last_automated_data_interval: Optional[DataInterval],
+        restriction: TimeRestriction,
+    ) -> Optional[DagRunInfo]:
+        if last_automated_data_interval is None:
+            start = restriction.earliest
+            if start is None:
+                return None
+            start = start.in_timezone(self.timezone).start_of('day')
+        else:
+            start = last_automated_data_interval.end
+
+        # Skip excluded dates
+        while self.is_excluded(start):
+            start = start + timedelta(days=1)
+
+        end = start + timedelta(days=1)
+
+        if restriction.latest is not None and start > restriction.latest:
+            return None
+
+        return DagRunInfo(
+            run_after=start,
+            data_interval=DataInterval(start=start, end=end),
+        )
+`.trim();
+}
+
+/**
+ * Generate a custom Airflow Timetable template
+ */
+function generateCustomTimetable(calendarName: string): string {
+  const className = sanitizeClassName(calendarName);
+
+  return `
+# Custom Timetable for ${calendarName}
+# Add this to your plugins/timetables.py
+
+from datetime import datetime, timedelta
+from typing import Optional
+from pendulum import DateTime, Timezone
+from airflow.timetables.base import DagRunInfo, DataInterval, TimeRestriction, Timetable
+
+class ${className}Timetable(Timetable):
+    """
+    Custom timetable for ${calendarName} calendar.
+    Implement your custom scheduling logic here.
+    """
+
+    def __init__(self, timezone: str = "UTC"):
+        self.timezone = Timezone(timezone)
+        # Add your calendar configuration here
+        self.valid_dates: set = set()  # Dates when DAG should run
+
+    def should_run(self, dt: DateTime) -> bool:
+        """Implement your custom logic to determine if DAG should run on this date"""
+        # Example: Check if date is in valid_dates set
+        # return dt.strftime('%Y-%m-%d') in self.valid_dates
+        return True  # Default: run every day
+
+    def infer_manual_data_interval(self, run_after: DateTime) -> DataInterval:
+        start = run_after.in_timezone(self.timezone).start_of('day')
+        return DataInterval(start=start, end=start + timedelta(days=1))
+
+    def next_dagrun_info(
+        self,
+        *,
+        last_automated_data_interval: Optional[DataInterval],
+        restriction: TimeRestriction,
+    ) -> Optional[DagRunInfo]:
+        if last_automated_data_interval is None:
+            start = restriction.earliest
+            if start is None:
+                return None
+            start = start.in_timezone(self.timezone).start_of('day')
+        else:
+            start = last_automated_data_interval.end
+
+        # Find next valid date
+        max_iterations = 365  # Prevent infinite loop
+        for _ in range(max_iterations):
+            if self.should_run(start):
+                break
+            start = start + timedelta(days=1)
+        else:
+            return None
+
+        end = start + timedelta(days=1)
+
+        if restriction.latest is not None and start > restriction.latest:
+            return None
+
+        return DagRunInfo(
+            run_after=start,
+            data_interval=DataInterval(start=start, end=end),
+        )
+`.trim();
+}
+
+/**
+ * Sanitize calendar name to valid Python class name
+ */
+function sanitizeClassName(name: string): string {
+  return name
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/^(\d)/, '_$1')
+    .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join('');
+}
+
+/**
+ * Parse SHIFT directive and return explanation
+ */
+function parseShift(shift: string, shiftNum?: string): string {
+  const shiftLower = shift.toLowerCase();
+  const num = shiftNum ? parseInt(shiftNum, 10) : 1;
+
+  if (shiftLower === 'prevday' || shiftLower.includes('prev')) {
+    return `Shift ${num} day(s) earlier - use timedelta in schedule or adjust data_interval`;
+  }
+  if (shiftLower === 'nextday' || shiftLower.includes('next')) {
+    return `Shift ${num} day(s) later - use timedelta in schedule or adjust data_interval`;
+  }
+  if (shiftLower === 'noshift' || shiftLower === 'none') {
+    return 'No shift applied';
+  }
+  if (shiftLower.includes('bus') || shiftLower.includes('work')) {
+    return `Shift to ${num}${getOrdinalSuffix(num)} business day - implement with custom Timetable`;
+  }
+
+  return `Custom shift pattern - implement with custom Timetable`;
+}
+
+/**
+ * Get ordinal suffix for a number (1st, 2nd, 3rd, etc.)
+ */
+function getOrdinalSuffix(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
+}
+
+/**
+ * Generate calendar configuration file content
+ */
+export function generateCalendarConfig(calendars: CalendarConfig[]): string {
+  const config = {
+    version: '1.0',
+    calendars: calendars.map(cal => ({
+      name: cal.name,
+      type: cal.type,
+      pattern: cal.pattern,
+      excludedDates: cal.excludedDates || [],
+      includedDates: cal.includedDates || [],
+    })),
+  };
+
+  return `# OFlair Calendar Configuration
+# Edit this file to customize calendar definitions
+
+${JSON.stringify(config, null, 2)}
+
+# Instructions:
+# 1. Copy the timetable code from each calendar's timetableCode property
+# 2. Add to your Airflow plugins/timetables.py
+# 3. Configure holidays and special dates
+# 4. Use the timetable in your DAG:
+#    with DAG(dag_id='my_dag', timetable=MyCalendarTimetable(), ...)
+`;
 }

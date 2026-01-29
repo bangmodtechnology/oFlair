@@ -48,7 +48,7 @@ import {
   type DivideStrategy,
   type ValidationResult,
 } from "@/lib/converter";
-import { type AppConfig } from "@/lib/storage/config-storage";
+import { type AppConfig, type CustomRule, loadCustomRules, getActiveCustomRules } from "@/lib/storage/config-storage";
 import { useStorage } from "@/hooks/use-storage";
 import { toast } from "sonner";
 
@@ -93,14 +93,18 @@ export default function ConvertPage() {
   const [useTaskFlowApi, setUseTaskFlowApi] = useState(false);
   const [showReportDialog, setShowReportDialog] = useState(false);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+  const [customRules, setCustomRules] = useState<CustomRule[]>([]);
   const [validationResults, setValidationResults] = useState<Map<string, ValidationResult> | null>(null);
   const storage = useStorage();
 
-  // Load settings from storage on mount
+  // Load settings and custom rules from storage on mount
   useEffect(() => {
     (async () => {
       const config = await storage.getConfig();
       setAppConfig(config);
+      // Load custom rules from localStorage
+      const rules = getActiveCustomRules();
+      setCustomRules(rules);
     })();
   }, [storage]);
 
@@ -189,6 +193,8 @@ export default function ConvertPage() {
         dagIdPrefix: appConfig?.dagIdPrefix,
         dagIdSuffix: appConfig?.dagIdSuffix,
         includeComments: appConfig?.includeComments ?? true,
+        // Apply custom rules
+        customRules,
       });
 
       setGeneratedDags(result.dags);
@@ -231,6 +237,12 @@ export default function ConvertPage() {
         ),
         airflowVersion,
         status: result.report.summary.failedJobs > 0 ? "partial" : "success",
+        // Store generated DAG files for later view/download
+        generatedDags: result.dags.map((dag) => ({
+          filename: dag.filename,
+          content: dag.content,
+          dagId: dag.dag.dagId,
+        })),
       });
 
       toast.success(

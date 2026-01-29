@@ -19,7 +19,9 @@
       "Bash(npm run build:static:*)",
       "Bash(rustup update:*)",
       "Bash(npx tauri icon:*)",
-      "Bash(sips:*)"
+      "Bash(sips:*)",
+      "Bash(npm run cli:*)",
+      "Bash(npm test:*)"
     ]
   }
 }

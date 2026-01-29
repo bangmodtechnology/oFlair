@@ -13,6 +13,81 @@ export interface AppConfig {
 
   // Output options
   includeComments: boolean;
+
+  // Custom rules (stored separately for size management)
+  customRulesEnabled?: boolean;
+}
+
+/**
+ * Custom rule for transforming values during conversion
+ */
+export interface CustomRule {
+  id: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  priority: number; // Higher = applied first
+
+  // Rule type
+  type: "value_replace" | "field_mapping" | "regex_transform" | "conditional";
+
+  // Configuration based on type
+  config: CustomRuleConfig;
+}
+
+export type CustomRuleConfig =
+  | ValueReplaceConfig
+  | FieldMappingConfig
+  | RegexTransformConfig
+  | ConditionalConfig;
+
+/**
+ * Replace a value with another across specified fields
+ */
+export interface ValueReplaceConfig {
+  type: "value_replace";
+  searchValue: string;
+  replaceValue: string;
+  caseSensitive?: boolean;
+  targetFields?: string[]; // If empty, apply to all text fields
+}
+
+/**
+ * Map specific field values to new values (lookup table)
+ */
+export interface FieldMappingConfig {
+  type: "field_mapping";
+  sourceField: string;
+  mappings: { from: string; to: string }[];
+  defaultValue?: string;
+}
+
+/**
+ * Apply regex transformation to field values
+ */
+export interface RegexTransformConfig {
+  type: "regex_transform";
+  targetField: string;
+  pattern: string;
+  replacement: string;
+  flags?: string; // e.g., "gi" for global case-insensitive
+}
+
+/**
+ * Conditional rule: if condition matches, apply transformation
+ */
+export interface ConditionalConfig {
+  type: "conditional";
+  condition: {
+    field: string;
+    operator: "equals" | "contains" | "starts_with" | "ends_with" | "regex";
+    value: string;
+  };
+  thenAction: {
+    targetField: string;
+    action: "set" | "append" | "prepend" | "replace";
+    value: string;
+  };
 }
 
 export interface ConversionHistoryItem {
@@ -27,10 +102,39 @@ export interface ConversionHistoryItem {
   }[];
   airflowVersion: string;
   status: "success" | "partial" | "failed";
+  // Store generated DAG files for view/download from history
+  generatedDags?: {
+    filename: string;
+    content: string;
+    dagId: string;
+  }[];
+}
+
+/**
+ * Calendar configuration for holiday/business day scheduling
+ */
+export interface CalendarEntry {
+  id: string;
+  name: string;
+  description?: string;
+  type: "business_days" | "holidays" | "custom" | "weekly_pattern";
+  isActive: boolean;
+  // For holidays type: list of excluded dates
+  excludedDates?: string[]; // ISO format: "2024-12-25"
+  // For business_days/weekly_pattern: pattern string
+  pattern?: string; // e.g., "MON-FRI", "MON,WED,FRI"
+  // For custom: included dates
+  includedDates?: string[];
+  // Timezone
+  timezone?: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const CONFIG_KEY = "oflair_config";
 const HISTORY_KEY = "oflair_conversion_history";
+const CUSTOM_RULES_KEY = "oflair_custom_rules";
+const CALENDARS_KEY = "oflair_calendars";
 
 export const DEFAULT_CONFIG: AppConfig = {
   defaultOwner: "airflow",
@@ -39,6 +143,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   dagIdPrefix: "",
   dagIdSuffix: "_dag",
   includeComments: true,
+  customRulesEnabled: true,
 };
 
 // Config functions
@@ -145,6 +250,71 @@ export function clearConversionHistory(): boolean {
   }
 }
 
+// Custom Rules functions
+export function loadCustomRules(): CustomRule[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const stored = localStorage.getItem(CUSTOM_RULES_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (error) {
+    console.error("Failed to load custom rules:", error);
+  }
+
+  return [];
+}
+
+export function saveCustomRules(rules: CustomRule[]): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    localStorage.setItem(CUSTOM_RULES_KEY, JSON.stringify(rules));
+    return true;
+  } catch (error) {
+    console.error("Failed to save custom rules:", error);
+    return false;
+  }
+}
+
+export function addCustomRule(rule: Omit<CustomRule, "id">): CustomRule {
+  const rules = loadCustomRules();
+  const newRule: CustomRule = {
+    ...rule,
+    id: `rule_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+  };
+  rules.push(newRule);
+  saveCustomRules(rules);
+  return newRule;
+}
+
+export function updateCustomRule(id: string, updates: Partial<CustomRule>): boolean {
+  const rules = loadCustomRules();
+  const index = rules.findIndex((r) => r.id === id);
+  if (index === -1) return false;
+
+  rules[index] = { ...rules[index], ...updates };
+  return saveCustomRules(rules);
+}
+
+export function deleteCustomRule(id: string): boolean {
+  const rules = loadCustomRules();
+  const filtered = rules.filter((r) => r.id !== id);
+  if (filtered.length === rules.length) return false;
+  return saveCustomRules(filtered);
+}
+
+export function getActiveCustomRules(): CustomRule[] {
+  return loadCustomRules()
+    .filter((r) => r.isActive)
+    .sort((a, b) => b.priority - a.priority);
+}
+
 // Export/Import functions
 
 export interface ExportData {
@@ -247,4 +417,128 @@ export function downloadSettingsAsJson(
     console.error("Failed to download settings:", error);
     return false;
   }
+}
+
+// Calendar functions
+export function loadCalendars(): CalendarEntry[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const stored = localStorage.getItem(CALENDARS_KEY);
+    if (stored) {
+      const items = JSON.parse(stored);
+      return items.map((item: CalendarEntry) => ({
+        ...item,
+        createdAt: new Date(item.createdAt),
+        updatedAt: new Date(item.updatedAt),
+      }));
+    }
+  } catch (error) {
+    console.error("Failed to load calendars:", error);
+  }
+
+  return [];
+}
+
+export function saveCalendars(calendars: CalendarEntry[]): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    localStorage.setItem(CALENDARS_KEY, JSON.stringify(calendars));
+    return true;
+  } catch (error) {
+    console.error("Failed to save calendars:", error);
+    return false;
+  }
+}
+
+export function addCalendar(calendar: Omit<CalendarEntry, "id" | "createdAt" | "updatedAt">): CalendarEntry {
+  const calendars = loadCalendars();
+  const now = new Date();
+  const newCalendar: CalendarEntry = {
+    ...calendar,
+    id: `cal_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    createdAt: now,
+    updatedAt: now,
+  };
+  calendars.push(newCalendar);
+  saveCalendars(calendars);
+  return newCalendar;
+}
+
+export function updateCalendar(id: string, updates: Partial<CalendarEntry>): boolean {
+  const calendars = loadCalendars();
+  const index = calendars.findIndex((c) => c.id === id);
+  if (index === -1) return false;
+
+  calendars[index] = {
+    ...calendars[index],
+    ...updates,
+    updatedAt: new Date(),
+  };
+  return saveCalendars(calendars);
+}
+
+export function deleteCalendar(id: string): boolean {
+  const calendars = loadCalendars();
+  const filtered = calendars.filter((c) => c.id !== id);
+  if (filtered.length === calendars.length) return false;
+  return saveCalendars(filtered);
+}
+
+export function getActiveCalendars(): CalendarEntry[] {
+  return loadCalendars().filter((c) => c.isActive);
+}
+
+export function getCalendarById(id: string): CalendarEntry | null {
+  const calendars = loadCalendars();
+  return calendars.find((c) => c.id === id) || null;
+}
+
+/**
+ * Get sample calendars for demonstration
+ */
+export function getSampleCalendars(): Omit<CalendarEntry, "id" | "createdAt" | "updatedAt">[] {
+  return [
+    {
+      name: "US Holidays 2024",
+      description: "US Federal holidays for 2024",
+      type: "holidays",
+      isActive: false,
+      excludedDates: [
+        "2024-01-01", // New Year's Day
+        "2024-01-15", // MLK Day
+        "2024-02-19", // Presidents' Day
+        "2024-05-27", // Memorial Day
+        "2024-06-19", // Juneteenth
+        "2024-07-04", // Independence Day
+        "2024-09-02", // Labor Day
+        "2024-10-14", // Columbus Day
+        "2024-11-11", // Veterans Day
+        "2024-11-28", // Thanksgiving
+        "2024-12-25", // Christmas
+      ],
+      timezone: "America/New_York",
+    },
+    {
+      name: "Business Days (Mon-Fri)",
+      description: "Standard business days Monday to Friday",
+      type: "business_days",
+      isActive: false,
+      pattern: "MON-FRI",
+      timezone: "UTC",
+    },
+    {
+      name: "Weekend Only",
+      description: "Run only on weekends",
+      type: "weekly_pattern",
+      isActive: false,
+      pattern: "SAT,SUN",
+      timezone: "UTC",
+    },
+  ];
 }

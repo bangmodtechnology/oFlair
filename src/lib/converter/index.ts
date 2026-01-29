@@ -6,10 +6,15 @@
 
 import type { ControlMJob, ControlMDefinition } from "@/types/controlm";
 import type { AirflowDAG, AirflowTask, AirflowDependency, GeneratedDAG } from "@/types/airflow";
+import type { ConversionTemplate } from "@/types/template";
+import type { CustomRule } from "@/lib/storage/config-storage";
 import { Rules, RULE_CHAINS } from "./rules";
 import { divideJobs, type DivideOptions, type DividedGroup } from "./dag-divider";
 import { convertSchedule, type ControlMSchedule, cronToHuman } from "./schedule-converter";
 import { generateReport, type ConversionReport } from "./report";
+import { convertJobWithTemplate } from "../templates/template-matcher";
+import { loadAllTemplates } from "../templates/template-loader";
+import { applyCustomRules } from "./custom-rules-engine";
 
 // Re-export types and utilities
 export { Rules, RULE_CHAINS } from "./rules";
@@ -17,6 +22,7 @@ export { divideJobs, getDividerStrategies, type DivideStrategy, type DivideOptio
 export { convertSchedule, cronToHuman, validateCron, type ControlMSchedule, type AirflowSchedule } from "./schedule-converter";
 export { generateReport, formatReportAsText, formatReportAsJson, type ConversionReport, type ConversionWarning } from "./report";
 export { validateDAG, validateGeneratedDAG, validateAllDAGs, type ValidationResult, type ValidationError } from "./validator";
+export { applyCustomRules, validateCustomRule, getSampleCustomRules } from "./custom-rules-engine";
 
 /**
  * Airflow version type
@@ -37,6 +43,7 @@ export interface ConversionOptions {
   dagIdSuffix?: string;
   includeComments?: boolean;
   timezone?: string;
+  customRules?: CustomRule[];
 }
 
 /**
@@ -66,10 +73,22 @@ export async function convertControlMToAirflow(
     dagIdSuffix = "",
     includeComments = true,
     timezone = "UTC",
+    customRules = [],
   } = options;
 
+  // Step 0: Apply custom rules to jobs (if any)
+  let processedJobs = jobs;
+  if (customRules.length > 0) {
+    const activeRules = customRules
+      .filter((r) => r.isActive)
+      .sort((a, b) => b.priority - a.priority);
+    if (activeRules.length > 0) {
+      processedJobs = jobs.map((job) => applyCustomRules(job, activeRules));
+    }
+  }
+
   // Step 1: Divide jobs into groups
-  const groups = divideJobs(jobs, divideStrategy);
+  const groups = divideJobs(processedJobs, divideStrategy);
 
   // Step 2: Build cross-DAG dependency map (for ExternalTaskSensor)
   const crossDagMap = buildCrossDagMap(groups, dagIdPrefix, dagIdSuffix);
@@ -277,115 +296,54 @@ function convertGroupToDag(
   };
 }
 
+// Template cache for performance
+let cachedTemplates: ConversionTemplate[] | null = null;
+
 /**
- * Convert a Control-M job to an Airflow task
+ * Get templates with caching
+ */
+function getTemplates(): ConversionTemplate[] {
+  if (!cachedTemplates) {
+    cachedTemplates = loadAllTemplates();
+  }
+  return cachedTemplates;
+}
+
+/**
+ * Clear template cache (call when templates are updated)
+ */
+export function clearTemplateCache(): void {
+  cachedTemplates = null;
+}
+
+/**
+ * Convert a Control-M job to an Airflow task using template matching
  */
 function convertJobToTask(job: ControlMJob): AirflowTask {
-  const taskId = Rules.applyChain(job.JOBNAME, RULE_CHAINS.taskId);
-  const jobType = (job.JOB_TYPE || "Command").toLowerCase();
+  const templates = getTemplates();
+  const result = convertJobWithTemplate(job, templates);
 
-  // Determine operator type and parameters
-  let operatorType: AirflowTask["operatorType"] = "BashOperator";
-  const params: Record<string, unknown> = {};
-
-  // Convert variables to env_vars
-  if (job.VARIABLE && job.VARIABLE.length > 0) {
-    params.env_vars = job.VARIABLE.map((v) => ({
-      name: v.NAME,
-      value: v.VALUE,
-    }));
-  }
-
-  // Map job type to operator
-  if (jobType.includes("kubernetes") || jobType.includes("container") || jobType.includes("docker")) {
-    operatorType = "KubernetesPodOperator";
-    params.cmds = job.CMDLINE;
-    params.image = job.FILENAME || "python:3.9";
-    params.namespace = job.HOST || "default";
-  } else if (jobType.includes("azure") || jobType.includes("blob")) {
-    operatorType = "WasbBlobSensor";
-    params.blob_name = job.FILENAME;
-    params.container_name = job.HOST || "default-container";
-  } else if (jobType.includes("ssh") || jobType.includes("remote")) {
-    operatorType = "SSHOperator";
-    params.ssh_command = Rules.applyChain(job.CMDLINE, RULE_CHAINS.bashCommand);
-    params.remote_host = job.HOST;
-  } else if (jobType.includes("email") || jobType.includes("mail") || jobType.includes("notification")) {
-    operatorType = "EmailOperator";
-    params.subject = job.DESCRIPTION || "Airflow Notification";
-  } else if (jobType.includes("file") || jobType.includes("watcher")) {
-    operatorType = "FileSensor";
-    params.filepath = job.FILENAME || "/tmp/watched_file";
-  } else if (jobType.includes("python") || (job.FILENAME && job.FILENAME.endsWith(".py"))) {
-    operatorType = "PythonOperator";
-    params.python_callable = `run_${taskId}`;
-  } else if (jobType === "dummy" || jobType === "box") {
-    operatorType = "EmptyOperator";
-  } else if (jobType.includes("http") || jobType.includes("rest") || jobType.includes("api")) {
-    operatorType = "SimpleHttpOperator";
-    params.endpoint = job.CMDLINE;
-    params.method = "GET";
-  } else if (jobType.includes("sql") || jobType.includes("database") || jobType.includes("db")) {
-    operatorType = "SQLExecuteQueryOperator";
-    params.sql = job.CMDLINE;
-    params.conn_id = "default_conn";
-  } else if (jobType.includes("lambda") || jobType.includes("aws_lambda")) {
-    // AWS Lambda
-    operatorType = "LambdaInvokeFunctionOperator";
-    params.function_name = job.CMDLINE || job.FILENAME || "my-function";
-    params.aws_conn_id = "aws_default";
-  } else if (jobType.includes("s3") && !jobType.includes("sensor")) {
-    // AWS S3 Copy
-    operatorType = "S3CopyObjectOperator";
-    params.source_bucket_key = job.FILENAME;
-    params.dest_bucket_key = job.HOST || "destination/";
-    params.aws_conn_id = "aws_default";
-  } else if (jobType.includes("glue")) {
-    // AWS Glue
-    operatorType = "GlueJobOperator";
-    params.job_name = job.CMDLINE || job.FILENAME || "glue-job";
-    params.aws_conn_id = "aws_default";
-  } else if (jobType.includes("sap") || jobType.includes("hana")) {
-    // SAP HANA
-    operatorType = "SapHanaOperator";
-    params.sql = job.CMDLINE;
-    params.sap_hana_conn_id = "sap_hana_default";
-  } else if (jobType.includes("informatica")) {
-    // Informatica Cloud
-    operatorType = "InformaticaCloudRunTaskOperator";
-    params.task_name = job.CMDLINE || job.FILENAME || "informatica-task";
-    params.informatica_conn_id = "informatica_default";
-  } else if (jobType.includes("spark")) {
-    // Spark Submit
-    operatorType = "SparkSubmitOperator";
-    params.application = job.FILENAME || "spark-app.py";
-    params.conn_id = "spark_default";
-  } else if (jobType.includes("databricks")) {
-    // Databricks
-    operatorType = "DatabricksSubmitRunOperator";
-    params.notebook_path = job.FILENAME || "/Workspace/notebook";
-    params.databricks_conn_id = "databricks_default";
-  } else if (jobType.includes("sftp") || (jobType.includes("ftp") && !jobType.includes("http"))) {
-    // SFTP
-    operatorType = "SFTPOperator";
-    params.ssh_conn_id = "sftp_default";
-    params.local_filepath = job.FILENAME;
-    params.remote_filepath = job.HOST || "/remote/path";
-    params.operation = "put";
-  } else {
-    // Default to BashOperator
-    operatorType = "BashOperator";
-    params.bash_command = Rules.applyChain(
+  // Ensure bash_command is properly escaped for BashOperator
+  if (result.operatorType === "BashOperator" && !result.params.bash_command) {
+    result.params.bash_command = Rules.applyChain(
       job.CMDLINE || job.FILENAME || "echo 'No command'",
       RULE_CHAINS.bashCommand
     );
   }
 
+  // Ensure env_vars are included from job variables
+  if (job.VARIABLE && job.VARIABLE.length > 0 && !result.params.env_vars) {
+    result.params.env_vars = job.VARIABLE.map((v) => ({
+      name: v.NAME,
+      value: v.VALUE,
+    }));
+  }
+
   return {
-    taskId,
-    operatorType,
+    taskId: result.taskId,
+    operatorType: result.operatorType as AirflowTask["operatorType"],
     description: job.DESCRIPTION,
-    params,
+    params: result.params,
     priority: job.PRIORITY ? parseInt(job.PRIORITY) : undefined,
   };
 }
