@@ -446,11 +446,9 @@ Control-M calendars (DAYSCAL) are converted to Airflow Timetables:
 ---
 
 ### TODO
-- [ ] Custom rule or business logic for DAG support
-- [ ] จัดเรียงเมนูให้ใช้งานหรือตั้งค่าต่างๆได้ง่ายขึ้น
-- [ ] Add more operator templates as needed
-- [ ] Calendar UI editor for holiday management
-- [ ] สามารถ ดูหรือ downlaod dag convert ไปแล้วใน history ได้
+-  จัดเรียงเมนูให้ใช้งานหรือตั้งค่าต่างๆได้ง่ายขึ้น
+
+
 
 
 ## Sample Control-M XML

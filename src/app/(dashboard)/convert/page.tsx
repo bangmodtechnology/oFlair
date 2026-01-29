@@ -38,6 +38,8 @@ import {
   FileCode,
   CheckCircle2,
   Download,
+  Cog,
+  CalendarDays,
 } from "lucide-react";
 import { parseControlM } from "@/lib/parser";
 import {
@@ -48,7 +50,15 @@ import {
   type DivideStrategy,
   type ValidationResult,
 } from "@/lib/converter";
-import { type AppConfig, type CustomRule, loadCustomRules, getActiveCustomRules } from "@/lib/storage/config-storage";
+import {
+  type AppConfig,
+  type CustomRule,
+  type CalendarEntry,
+  loadCustomRules,
+  getActiveCustomRules,
+  loadCalendars,
+  getActiveCalendars,
+} from "@/lib/storage/config-storage";
 import { useStorage } from "@/hooks/use-storage";
 import { toast } from "sonner";
 
@@ -94,19 +104,28 @@ export default function ConvertPage() {
   const [showReportDialog, setShowReportDialog] = useState(false);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [customRules, setCustomRules] = useState<CustomRule[]>([]);
+  const [calendars, setCalendars] = useState<CalendarEntry[]>([]);
+  const [useCustomRules, setUseCustomRules] = useState(true);
+  const [useCalendars, setUseCalendars] = useState(true);
   const [validationResults, setValidationResults] = useState<Map<string, ValidationResult> | null>(null);
   const storage = useStorage();
 
-  // Load settings and custom rules from storage on mount
+  // Load settings, custom rules, and calendars from storage on mount
   useEffect(() => {
     (async () => {
       const config = await storage.getConfig();
       setAppConfig(config);
-      // Load custom rules from localStorage
+      // Load custom rules and calendars from localStorage
       const rules = getActiveCustomRules();
       setCustomRules(rules);
+      const cals = getActiveCalendars();
+      setCalendars(cals);
     })();
   }, [storage]);
+
+  // Computed values for active rules/calendars
+  const activeRulesCount = useCustomRules ? customRules.length : 0;
+  const activeCalendarsCount = useCalendars ? calendars.length : 0;
 
   const dividerStrategies = getDividerStrategies();
   const currentStepIndex = STEPS.findIndex((s) => s.id === step);
@@ -193,8 +212,8 @@ export default function ConvertPage() {
         dagIdPrefix: appConfig?.dagIdPrefix,
         dagIdSuffix: appConfig?.dagIdSuffix,
         includeComments: appConfig?.includeComments ?? true,
-        // Apply custom rules
-        customRules,
+        // Apply custom rules (only if enabled)
+        customRules: useCustomRules ? customRules : [],
       });
 
       setGeneratedDags(result.dags);
@@ -516,6 +535,99 @@ export default function ConvertPage() {
                 </div>
               )}
 
+              {/* Custom Rules & Calendars */}
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Custom Rules */}
+                <div className="p-4 border rounded-lg space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-2">
+                      <Cog className="h-4 w-4" />
+                      Custom Rules
+                    </Label>
+                    <input
+                      type="checkbox"
+                      id="use-rules"
+                      checked={useCustomRules}
+                      onChange={(e) => setUseCustomRules(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                  </div>
+                  <div className="text-sm">
+                    {customRules.length > 0 ? (
+                      <div className="space-y-1">
+                        <p className="text-muted-foreground">
+                          {customRules.length} active rule(s)
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {customRules.slice(0, 3).map((rule) => (
+                            <Badge key={rule.id} variant="secondary" className="text-xs">
+                              {rule.name}
+                            </Badge>
+                          ))}
+                          {customRules.length > 3 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{customRules.length - 3} more
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">
+                        No active rules.{" "}
+                        <a href="/rules" className="text-primary hover:underline">
+                          Configure rules
+                        </a>
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Calendars */}
+                <div className="p-4 border rounded-lg space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-2">
+                      <CalendarDays className="h-4 w-4" />
+                      Calendars
+                    </Label>
+                    <input
+                      type="checkbox"
+                      id="use-calendars"
+                      checked={useCalendars}
+                      onChange={(e) => setUseCalendars(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                  </div>
+                  <div className="text-sm">
+                    {calendars.length > 0 ? (
+                      <div className="space-y-1">
+                        <p className="text-muted-foreground">
+                          {calendars.length} active calendar(s)
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {calendars.slice(0, 3).map((cal) => (
+                            <Badge key={cal.id} variant="secondary" className="text-xs">
+                              {cal.name}
+                            </Badge>
+                          ))}
+                          {calendars.length > 3 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{calendars.length - 3} more
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">
+                        No active calendars.{" "}
+                        <a href="/calendars" className="text-primary hover:underline">
+                          Configure calendars
+                        </a>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Airflow 3.x Info */}
               {isAirflow3 && (
                 <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
@@ -595,6 +707,38 @@ export default function ConvertPage() {
                         </span>
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Rules and Calendars */}
+              {(activeRulesCount > 0 || activeCalendarsCount > 0) && (
+                <div className="p-4 border rounded-lg bg-muted/30">
+                  <p className="text-sm font-medium mb-2 flex items-center gap-2">
+                    <Cog className="h-4 w-4" />
+                    Custom Rules & Calendars
+                  </p>
+                  <div className="grid gap-2 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <Cog className="h-3 w-3" /> Rules:
+                      </span>
+                      {activeRulesCount > 0 ? (
+                        <Badge variant="secondary">{activeRulesCount} active</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">Disabled</span>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <CalendarDays className="h-3 w-3" /> Calendars:
+                      </span>
+                      {activeCalendarsCount > 0 ? (
+                        <Badge variant="secondary">{activeCalendarsCount} active</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">Disabled</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
